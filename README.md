@@ -1,2 +1,9 @@
-# QT9_QMS_File_Sorter
-Check out the source code for the QT9 QMS File Sorter program. This tool automatically detects newly created files in specified folders, moves them to matching folders based on predefined names, and appends the creation date to each file name for organized storage.
+# Steps to install QT9 QMS File Sorter:
+
+1. Find the downloaded installer file (FileSorter_vX.X.X_Installer.exe) on your computer.
+2. Double-click the installer file to start the installation process.
+3. Follow the on-screen instructions to complete the installation.
+4. After the installation is complete, click "Finish" and the setup wizard will appear.
+5. Click on "Run App on Startup".
+
+*The QT9 QMS File Sorter has now been installed and will run in the background, automatically starting each time the computer is turned on.*
