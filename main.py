@@ -9,7 +9,6 @@ import threading
 import tkinter as tk
 import pystray
 import tempfile
-import webbrowser
 import requests
 from pystray import MenuItem as item
 from PIL import Image
@@ -21,7 +20,7 @@ from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
 # Define CURRENT_VERSION and GITHUB_REPO constants
-CURRENT_VERSION = "2.2.0"
+CURRENT_VERSION = "2.2.1"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
 # Configuration
@@ -44,48 +43,6 @@ log_handler.setFormatter(formatter)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
-
-def show_splash_screen(duration=3):
-    splash_root = tk.Tk()
-    splash_root.overrideredirect(True)
-    splash_root.attributes("-alpha", 0.9)
-    bg_color = "#333333"
-    text_color = "#FFFFFF"
-    font = ("Segoe UI Variable", 20)
-    splash_root.configure(bg=bg_color)
-    window_width = 400
-    window_height = 250
-    screen_width = splash_root.winfo_screenwidth()
-    screen_height = splash_root.winfo_screenheight()
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
-    splash_root.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-    frame = tk.Frame(splash_root, bg=bg_color, bd=5)
-    frame.place(relx=0.5, rely=0.5, anchor="center")
-
-    # Attempt to find and load the logo image from multiple paths
-    logo_paths = [
-        r'C:\Program Files\QT9 QMS File Sorter\QT9Logo.png',
-        r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\QT9Logo.png',
-        r'C:/Users/druffolo/Downloads/QT9Logo.png'  # Add or update paths as necessary
-    ]
-    logo = None
-    for path in logo_paths:
-        try:
-            logo = tk.PhotoImage(file=path)
-            break  # Exit the loop if the file is found and loaded successfully
-        except tk.TclError:
-            continue  # Try the next path if the current one fails
-
-    if not logo:
-        raise Exception("Logo file could not be found in any of the specified paths.")
-
-    logo_label = tk.Label(frame, image=logo, bg=bg_color)
-    logo_label.pack()
-    splash_label = tk.Label(frame, text="Starting Application...", font=font, fg=text_color, bg=bg_color)
-    splash_label.pack(expand=True, fill=tk.BOTH, pady=(15, 0))
-    splash_root.after(duration * 1000, splash_root.destroy)
-    splash_root.mainloop()
 
 def setup_system_tray():
     try:
@@ -145,8 +102,11 @@ def create_gui():
     root.mainloop()
 
 def show_gui(icon, item):
-    icon.stop()
-    create_gui()
+    def gui_thread():
+        create_gui()
+    t = threading.Thread(target=gui_thread)
+    t.daemon = True
+    t.start()
 
 def check_for_updates():
     try:
@@ -158,6 +118,8 @@ def check_for_updates():
         current_version_tuple = tuple(map(int, CURRENT_VERSION.strip('v').split('.')))
         if latest_version_tuple > current_version_tuple:
             show_update_gui(latest_version)
+        elif latest_version_tuple <= current_version_tuple:
+            messagebox.showinfo("Update Check", "Your program is up to date.")
     except Exception as e:
         print(f"Error checking for updates: {e}")
 
@@ -170,28 +132,39 @@ def show_update_gui(latest_version):
         update_window.destroy()
 
     update_window = tk.Tk()
-    
-    # Window size
-    window_width = 400
-    window_height = 250
 
-    # Get screen width and height
+    try:
+        update_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
+    except tk.TclError:
+        try:
+            update_window.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
+        except tk.TclError as e:
+            raise Exception("Both logo files could not be found.") from e
+    
+    # Window size and position
+    window_width = 300
+    window_height = 150
     screen_width = update_window.winfo_screenwidth()
     screen_height = update_window.winfo_screenheight()
-
-
-    # Calculate x and y coordinates
     x_coordinate = int((screen_width / 2) - (window_width / 2))
     y_coordinate = int((screen_height / 2) - (window_height / 2))
-
-    # Set the window's position to the center of the screen
     update_window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
 
+    update_window.configure(bg='grey')
     update_window.title("Update Available")
-    update_window.geometry("300x150")
-    tk.Label(update_window, text=f"Version {latest_version} is available.\nDo you want to install the update?").pack(pady=10)
-    tk.Button(update_window, text="Install", command=on_install).pack(side=tk.LEFT, padx=15, pady=5)
-    tk.Button(update_window, text="Later", command=on_decline).pack(side=tk.RIGHT, padx=15, pady=5)
+    
+    label = tk.Label(update_window, text=f"Version {latest_version} is available.\nDo you want to install the update?", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 10, 'bold'))
+    label.place(relx=0.5, rely=0.3, anchor='center')
+    
+    button_frame = tk.Frame(update_window, bg='grey')
+    button_frame.place(relx=0.5, rely=0.6, anchor='center')
+    
+    install_btn = tk.Button(button_frame, text="Install", command=on_install, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
+    install_btn.grid(row=0, column=0, padx=10)
+    
+    later_btn = tk.Button(button_frame, text="Later", command=on_decline, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
+    later_btn.grid(row=0, column=1, padx=10)
+    
     update_window.mainloop()
 
 def uninstall_old_version():
@@ -315,6 +288,7 @@ def quit_application(icon, item):
     icon.stop()
     global keep_running
     keep_running = False
+    os._exit(0)
 
 def signal_handler(signum, frame):
     global keep_running
@@ -326,8 +300,6 @@ def main():
     
     tray_thread = threading.Thread(target=setup_system_tray)
     tray_thread.start()
-
-    show_splash_screen(2)
 
     setup_thread = threading.Thread(target=create_gui)
     setup_thread.start()
