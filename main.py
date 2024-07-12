@@ -77,7 +77,7 @@ def create_gui():
 
     # Window size
     window_width = 400
-    window_height = 250
+    window_height = 280
 
     # Get screen width and height
     screen_width = root.winfo_screenwidth()
@@ -94,14 +94,16 @@ def create_gui():
     label = tk.Label(root, text="QT9 QMS File Sorter Setup", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
     label.pack(pady=(20, 10))
     button_frame = tk.Frame(root, bg='grey')
-    button_frame.place(relx=0.5, rely=0.5, anchor='center')
+    button_frame.place(relx=0.5, rely=0.55, anchor='center')
+    check_for_update_btn = tk.Button(button_frame, text="Check For Updates", command=check_for_updates, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+    check_for_update_btn.grid(row=0, column=0, pady=13)
     move_to_startup_btn = tk.Button(button_frame, text="Run App on Startup", command=run_move_to_startup, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    move_to_startup_btn.grid(row=0, column=0, pady=15)
+    move_to_startup_btn.grid(row=1, column=0, pady=13)
     open_qt9_folder_btn = tk.Button(button_frame, text="Open Application Logs", command=open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    open_qt9_folder_btn.grid(row=1, column=0, pady=20)
+    open_qt9_folder_btn.grid(row=2, column=0, pady=13)
     root.mainloop()
 
-def show_gui(icon, item):
+def show_gui():
     def gui_thread():
         create_gui()
     t = threading.Thread(target=gui_thread)
