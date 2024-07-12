@@ -1,19 +1,28 @@
 import os
+import sys
 import shutil
 import time
 import logging
 import signal
+import subprocess
 import threading
 import tkinter as tk
 import pystray
+import tempfile
+import webbrowser
+import requests
 from pystray import MenuItem as item
-from PIL import Image, ImageDraw
+from PIL import Image
 from tkinter import messagebox
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
+
+# Define CURRENT_VERSION and GITHUB_REPO constants
+CURRENT_VERSION = "2.2.0"
+GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
 # Configuration
 recordings_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
@@ -35,31 +44,6 @@ log_handler.setFormatter(formatter)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
-
-def show_gui(icon, item):
-    icon.stop()
-    create_gui()
-
-def quit_application(icon, item):
-    icon.stop()
-    global keep_running
-    keep_running = False
-
-def setup_system_tray():
-    try:
-        icon_image_path = r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'
-        icon_image = Image.open(icon_image_path)
-    except FileNotFoundError:
-        try:
-            icon_image_path = r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'
-            icon_image = Image.open(icon_image_path)
-        except FileNotFoundError as e:
-            raise Exception("Both logo files could not be found.") from e
-    # Menu items
-    menu = (item('Open Setup Wizard', show_gui), item('Quit', quit_application))
-    # Create and run the system tray icon
-    icon = pystray.Icon("QT9 QMS File Sorter", icon_image, "QT9 QMS File Sorter", menu)
-    icon.run()
 
 def show_splash_screen(duration=3):
     splash_root = tk.Tk()
@@ -103,27 +87,24 @@ def show_splash_screen(duration=3):
     splash_root.after(duration * 1000, splash_root.destroy)
     splash_root.mainloop()
 
-def run_move_to_startup():
+def setup_system_tray():
     try:
-        source_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"
-        username = os.getlogin()
-        destination_path = fr"C:\Users\{username}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-        shortcut_name = "QT9 QMS File Sorter.lnk"
-        source_shortcut_path = os.path.join(source_path, shortcut_name)
-        os.makedirs(destination_path, exist_ok=True)
-        if os.path.exists(source_shortcut_path):
-            shutil.copy2(source_shortcut_path, destination_path)
-            messagebox.showinfo("Success", f"Application setup to run on startup.")
-        else:
-            messagebox.showerror("Error", f"Shortcut '{shortcut_name}' not found in the source directory.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to move shortcut: {str(e)}")
-
-def open_qt9_folder():
-    try:
-        os.startfile(os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter"))
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
+        icon_image_path = r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'
+        icon_image = Image.open(icon_image_path)
+    except FileNotFoundError:
+        try:
+            icon_image_path = r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'
+            icon_image = Image.open(icon_image_path)
+        except FileNotFoundError as e:
+            raise Exception("Both logo files could not be found.") from e
+    # Menu items
+    menu = (item('Open Setup Wizard', show_gui),
+            item('Check for Updates', check_for_updates), 
+            item('Quit', quit_application),
+            )
+    # Create and run the system tray icon
+    icon = pystray.Icon("QT9 QMS File Sorter", icon_image, "QT9 QMS File Sorter", menu)
+    icon.run()
 
 def create_gui():
     root = tk.Tk()
@@ -163,21 +144,86 @@ def create_gui():
     open_qt9_folder_btn.grid(row=1, column=0, pady=20)
     root.mainloop()
 
-class MyHandler(FileSystemEventHandler):
-    def on_created(self, event):
-        logging.info(f'The file {os.path.basename(event.src_path)} has been created!')
-        move_files()
+def show_gui(icon, item):
+    icon.stop()
+    create_gui()
 
-def send_notification(original_file_name, new_file_name, destination_folder):
+def check_for_updates():
     try:
-        logging.info(f'Attempting to send notification for {new_file_name}')
-        notification.notify(
-            title='QT9 U Recording Transfer',
-            message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
-            timeout=5000
-        )
+        response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
+        latest_version = response.json()['tag_name']
+        print(f"Latest version: {latest_version}")
+        # Convert version strings to tuples of integers for comparison
+        latest_version_tuple = tuple(map(int, latest_version.strip('v').split('.')))
+        current_version_tuple = tuple(map(int, CURRENT_VERSION.strip('v').split('.')))
+        if latest_version_tuple > current_version_tuple:
+            show_update_gui(latest_version)
     except Exception as e:
-        logging.error(f'An error occurred while trying to send a notification: {e}')
+        print(f"Error checking for updates: {e}")
+
+def show_update_gui(latest_version):
+    def on_install():
+        download_and_install_update(latest_version)
+        update_window.destroy()
+
+    def on_decline():
+        update_window.destroy()
+
+    update_window = tk.Tk()
+    
+    # Window size
+    window_width = 400
+    window_height = 250
+
+    # Get screen width and height
+    screen_width = update_window.winfo_screenwidth()
+    screen_height = update_window.winfo_screenheight()
+
+
+    # Calculate x and y coordinates
+    x_coordinate = int((screen_width / 2) - (window_width / 2))
+    y_coordinate = int((screen_height / 2) - (window_height / 2))
+
+    # Set the window's position to the center of the screen
+    update_window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
+
+    update_window.title("Update Available")
+    update_window.geometry("300x150")
+    tk.Label(update_window, text=f"Version {latest_version} is available.\nDo you want to install the update?").pack(pady=10)
+    tk.Button(update_window, text="Install", command=on_install).pack(side=tk.LEFT, padx=15, pady=5)
+    tk.Button(update_window, text="Later", command=on_decline).pack(side=tk.RIGHT, padx=15, pady=5)
+    update_window.mainloop()
+
+def uninstall_old_version():
+    try:
+        uninstaller_path = r'C:\Program Files\QT9 QMS File Sorter\unins000.exe'
+        if os.path.exists(uninstaller_path):
+            subprocess.run(uninstaller_path + ' /SILENT', check=True)  # '/SILENT' is an example flag for silent uninstallation
+            print("Old version uninstalled successfully.")
+        else:
+            print("Uninstaller not found. Proceeding with the installation of the new version.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during uninstallation: {e}")
+        sys.exit(1)  # Exit if uninstallation fails to prevent potential conflicts
+
+def download_and_install_update(latest_version):
+    try:
+        download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{latest_version}/FileSorter_{latest_version}_Installer.exe"
+        response = requests.get(download_url)
+        temp_dir = tempfile.mkdtemp()
+        installer_path = os.path.join(temp_dir, "FileSorter_Installer.exe")
+        with open(installer_path, 'wb') as file:
+            file.write(response.content)
+        messagebox.showinfo("Update", "Download completed. Starting the installer.")
+        os.startfile(installer_path)
+        uninstall_old_version()
+        sys.exit()  # Exit the current process to allow the installer to run
+    except Exception as e:
+        messagebox.showerror("Update Error", f"Failed to download and install update: {e}")
+
+def periodic_check():
+    check_for_updates()
+    threading.Timer(3600, periodic_check).start()  # Check for updates every hour
 
 def move_files():
     logging.info('Starting move_files function')
@@ -227,12 +273,57 @@ def move_files():
                     logging.error(f'Unexpected error moving {source_file_path} ({filename}). Error: {e}')
     logging.info('Completed move_files function')
 
+def send_notification(original_file_name, new_file_name, destination_folder):
+    try:
+        logging.info(f'Attempting to send notification for {new_file_name}')
+        notification.notify(
+            title='QT9 U Recording Transfer',
+            message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
+            timeout=5000
+        )
+    except Exception as e:
+        logging.error(f'An error occurred while trying to send a notification: {e}')
+
+class MyHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        logging.info(f'The file {os.path.basename(event.src_path)} has been created!')
+        move_files()
+
+def run_move_to_startup():
+    try:
+        source_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"
+        username = os.getlogin()
+        destination_path = fr"C:\Users\{username}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
+        shortcut_name = "QT9 QMS File Sorter.lnk"
+        source_shortcut_path = os.path.join(source_path, shortcut_name)
+        os.makedirs(destination_path, exist_ok=True)
+        if os.path.exists(source_shortcut_path):
+            shutil.copy2(source_shortcut_path, destination_path)
+            messagebox.showinfo("Success", f"Application setup to run on startup.")
+        else:
+            messagebox.showerror("Error", f"Shortcut '{shortcut_name}' not found in the source directory.")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to move shortcut: {str(e)}")
+
+def open_qt9_folder():
+    try:
+        os.startfile(os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter"))
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
+
+def quit_application(icon, item):
+    icon.stop()
+    global keep_running
+    keep_running = False
+
 def signal_handler(signum, frame):
     global keep_running
     logging.info('Signal received, stopping observer.')
     keep_running = False
 
 def main():
+    periodic_check()
+    
     tray_thread = threading.Thread(target=setup_system_tray)
     tray_thread.start()
 
