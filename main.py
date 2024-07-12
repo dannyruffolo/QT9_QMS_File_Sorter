@@ -1,269 +1,372 @@
 import os
 import shutil
 import time
-import logging
-import signal
 import threading
+import signal
+from pathlib import Path
+from datetime import datetime
+
+import logging
+from logging.handlers import RotatingFileHandler
+
 import tkinter as tk
+from PIL import ImageTk
+from tkinter import messagebox
+
+from PIL import Image
+from plyer import notification
 import pystray
 from pystray import MenuItem as item
-from PIL import Image, ImageDraw
-from tkinter import messagebox
-from datetime import datetime
-from logging.handlers import RotatingFileHandler
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
-from plyer import notification
+from watchdog.observers import Observer
 
-# Configuration
 recordings_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
-log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
 
-# Updated path for log_file to store it in the specified folder
-log_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter")
-if not os.path.exists(log_file_path):
-    os.makedirs(log_file_path)
-log_file = os.path.join(log_file_path, 'app.log')
 
-# Set up RotatingFileHandler
-log_handler = RotatingFileHandler(log_file, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
-log_handler.setLevel(logging.INFO)
-formatter = logging.Formatter(log_format, datefmt='%m-%d-%Y %H:%M:%S')
-log_handler.setFormatter(formatter)
+class Application:
+    def __init__(self):
+        """
+        Initializes the Application object, setting up logging, defining essential paths, and initializing core file names.
+        """
+        # Initialize icon_image_paths before calling setup_system_tray
+        self.icon_image_paths = [
+            os.path.join('C:', os.sep, 'Program Files', 'QT9 QMS File Sorter', 'app_icon.ico'),
+            os.path.join('C:', os.sep, 'Users', 'druffolo', 'Desktop', 'File Sorter Installer & EXE Files', 'app_icon.ico')
+        ]
+        self.logo_paths = [
+            os.path.join('C:', os.sep, 'Program Files', 'QT9 QMS File Sorter', 'QT9Logo.png'),
+            os.path.join('C:', os.sep, 'Users', 'druffolo', 'Desktop', 'File Sorter Installer & EXE Files', 'QT9Logo.png'),
+            Path('C:/Users/druffolo/Downloads/QT9Logo.png')
+        ]
+        self.show_splash_screen()
+        self.show_gui()
+        self.setup_logging()
+        self.setup_system_tray()  # Now this is called after icon_image_paths is defined
+        self.keep_running = True
+        # Register signal handlers
+        signal.signal(signal.SIGTERM, self.signal_handler)
 
-# Get the root logger and set the handler
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(log_handler)
+        self.core_file_names = {
+            'QT9 QMS Change Control': Path.home() / 'Box/QT9 University/Training Recordings/Change Control',
+            'QT9 QMS Doc Control': Path.home() / 'Box/QT9 University/Training Recordings/Document Control',
+            'QT9 QMS Deviations': Path.home() / 'Box/QT9 University/Training Recordings/Deviations',
+            'QT9 QMS Inspections': Path.home() / 'Box/QT9 University/Training Recordings/Inspections',
+            'QT9 QMS CAPA_NCP': Path.home() / 'Box/QT9 University/Training Recordings/CAPA',
+            'QT9 QMS Audit Management': Path.home() / 'Box/QT9 University/Training Recordings/Audit',
+            'QT9 QMS Supplier Surveys_Evaluations': Path.home() / 'Box/QT9 University/Training Recordings/Supplier Surveys - Evaluations',
+            'QT9 QMS Preventive Maintenance': Path.home() / 'Box/QT9 University/Training Recordings/Preventative Maintenance',
+            'QT9 QMS ECR_ECN': Path.home() / 'Box/QT9 University/Training Recordings/ECR-ECN',
+            'QT9 QMS Customer Module': Path.home() / 'Box/QT9 University/Training Recordings/Customer Feedback - Surveys',
+            'QT9 QMS Training Module': Path.home() / 'Box/QT9 University/Training Recordings/Training Module',
+            'QT9 QMS Calibrations': Path.home() / 'Box/QT9 University/Training Recordings/Calibrations',
+            'QT9 QMS Test Module': Path.home() / 'Box/QT9 University/Training Recordings/TEST - DO NOT USE',
+        }
 
-def show_gui(icon, item):
-    icon.stop()
-    create_gui()
+    def setup_logging(self):
+        """
+        Sets up logging for the application, including file rotation and formatting.
+        """
+        log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
+        log_file_path = Path.home() / 'AppData/Local/QT9 QMS File Sorter'
+        log_file_path.mkdir(parents=True, exist_ok=True)
+        log_file = log_file_path / 'app.log'
 
-def quit_application(icon, item):
-    icon.stop()
-    global keep_running
-    keep_running = False
+        # Set up RotatingFileHandler
+        log_handler = RotatingFileHandler(log_file, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
+        log_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(log_format, datefmt='%m-%d-%Y %H:%M:%S')
+        log_handler.setFormatter(formatter)
 
-def setup_system_tray():
-    try:
-        icon_image_path = r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'
-        icon_image = Image.open(icon_image_path)
-    except FileNotFoundError:
-        try:
-            icon_image_path = r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'
-            icon_image = Image.open(icon_image_path)
-        except FileNotFoundError as e:
-            raise Exception("Both logo files could not be found.") from e
-    # Menu items
-    menu = (item('Open Setup Wizard', show_gui), item('Quit', quit_application))
-    # Create and run the system tray icon
-    icon = pystray.Icon("QT9 QMS File Sorter", icon_image, "QT9 QMS File Sorter", menu)
-    icon.run()
+        # Get the root logger and set the handler
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+        logger.addHandler(log_handler)
 
-def show_splash_screen(duration=3):
-    splash_root = tk.Tk()
-    splash_root.overrideredirect(True)
-    splash_root.attributes("-alpha", 0.9)
-    bg_color = "#333333"
-    text_color = "#FFFFFF"
-    font = ("Segoe UI Variable", 20)
-    splash_root.configure(bg=bg_color)
-    window_width = 400
-    window_height = 250
-    screen_width = splash_root.winfo_screenwidth()
-    screen_height = splash_root.winfo_screenheight()
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
-    splash_root.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-    frame = tk.Frame(splash_root, bg=bg_color, bd=5)
-    frame.place(relx=0.5, rely=0.5, anchor="center")
+    def load_image(self, paths, image_type='icon'):
+        """
+        Attempts to load an image from a list of paths.
 
-    # Attempt to find and load the logo image from multiple paths
-    logo_paths = [
-        r'C:\Program Files\QT9 QMS File Sorter\QT9Logo.png',
-        r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\QT9Logo.png',
-        r'C:/Users/druffolo/Downloads/QT9Logo.png'  # Add or update paths as necessary
-    ]
-    logo = None
-    for path in logo_paths:
-        try:
-            logo = tk.PhotoImage(file=path)
-            break  # Exit the loop if the file is found and loaded successfully
-        except tk.TclError:
-            continue  # Try the next path if the current one fails
+        :param paths: A list of file paths to try loading the image from.
+        :param image_type: The type of image to load ('icon' or 'logo').
+        :return: The loaded image, or None if all paths fail.
+        """
+        for path in paths:
+            try:
+                if image_type == 'icon':
+                    return Image.open(path)
+                elif image_type == 'logo':
+                    return tk.PhotoImage(file=path)
+            except FileNotFoundError:
+                logging.warning(f'File not found: {path}. Trying next.')
+            except IOError as e:
+                logging.error(f'IO error when opening {path}: {e}')
+                continue
+        logging.error(f'None of the specified paths contain the {image_type} image.')
+        return None
 
-    if not logo:
-        raise Exception("Logo file could not be found in any of the specified paths.")
+    def show_gui(self, icon=None, item=None):
+        """
+        Shows the main GUI window.
 
-    logo_label = tk.Label(frame, image=logo, bg=bg_color)
-    logo_label.pack()
-    splash_label = tk.Label(frame, text="Starting Application...", font=font, fg=text_color, bg=bg_color)
-    splash_label.pack(expand=True, fill=tk.BOTH, pady=(15, 0))
-    splash_root.after(duration * 1000, splash_root.destroy)
-    splash_root.mainloop()
+        :param icon: Optional. The system tray icon object.
+        :param item: Optional. The menu item selected.
+        """
+        if icon:
+            icon.stop()
+        self.create_gui()
 
-def run_move_to_startup():
-    try:
-        source_path = r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"
-        username = os.getlogin()
-        destination_path = fr"C:\Users\{username}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-        shortcut_name = "QT9 QMS File Sorter.lnk"
-        source_shortcut_path = os.path.join(source_path, shortcut_name)
-        os.makedirs(destination_path, exist_ok=True)
-        if os.path.exists(source_shortcut_path):
-            shutil.copy2(source_shortcut_path, destination_path)
-            messagebox.showinfo("Success", f"Application setup to run on startup.")
-        else:
-            messagebox.showerror("Error", f"Shortcut '{shortcut_name}' not found in the source directory.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to move shortcut: {str(e)}")
-
-def open_qt9_folder():
-    try:
-        os.startfile(os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter"))
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
-
-def create_gui():
-    root = tk.Tk()
-    root.title("Setup Wizard")
+    def quit_application(self, icon=None, item=None):
+        """
+        Quits the application, optionally stopping the system tray icon.
     
-    try:
-        root.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
-    except tk.TclError:
+        :param icon: Optional. The system tray icon object.
+        :param item: Optional. The menu item selected.
+        """
+        if icon:
+            icon.stop()
+        self.keep_running = False  # Ensure this attribute is used to control the main loop of the application
+
+    def setup_system_tray(self):
+        """
+        Sets up the system tray icon and menu for the application.
+        """
+        icon_image = self.load_image(self.icon_image_paths, 'icon')
+        if icon_image is None:
+            logging.error('System tray icon setup failed due to missing icon image.')
+            return
+
+        menu = (item('Open Setup Wizard', self.show_gui), item('Quit', self.quit_application))
+        icon = pystray.Icon('QT9 QMS File Sorter', icon_image, 'QT9 QMS File Sorter', menu)
+        icon.run()
+
+    def setup_window(self, root, width, height, title):
+        """
+        Configures the main window's size, position, and title.
+
+        :param root: The Tk root window object.
+        :param width: The desired width of the window.
+        :param height: The desired height of the window.
+        :param title: The title of the window.
+        """
+        root.title(title)
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        x_coordinate = int((screen_width / 2) - (width / 2))
+        y_coordinate = int((screen_height / 2) - (height / 2))
+        root.geometry(f'{width}x{height}+{x_coordinate}+{y_coordinate}')
+        root.configure(bg='grey')
+
+    def show_splash_screen(self, duration=3):
+        """
+        Displays a splash screen for a specified duration.
+
+        :param duration: The duration in seconds to display the splash screen.
+        """
         try:
-            root.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
-        except tk.TclError as e:
-            raise Exception("Both logo files could not be found.") from e
+            splash_root = tk.Tk()
+            self.setup_window(splash_root, 400, 250, 'Starting Application...')
 
-    # Window size
-    window_width = 400
-    window_height = 250
+            splash_root.overrideredirect(True)
+            splash_root.attributes('-alpha', 0.9)
+            bg_color = '#333333'
+            text_color = '#FFFFFF'
+            font = ('Segoe UI Variable', 20)
+            splash_root.configure(bg=bg_color)  # Set the background color of the splash window
 
-    # Get screen width and height
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
+            logo = self.load_image(self.logo_paths, 'logo')
+            if logo is None:
+                logging.error('Splash screen setup failed due to missing logo image.')
+                return
 
-    # Calculate x and y coordinates
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
+            frame = tk.Frame(splash_root, bg=bg_color, bd=5)
+            frame.place(relx=0.5, rely=0.5, anchor='center')
 
-    # Set the window's position to the center of the screen
-    root.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
+            logo_label = tk.Label(frame, image=logo, bg=bg_color)
+            logo_label.pack()
+            splash_label = tk.Label(frame, text='Starting Application...', font=font, fg=text_color, bg=bg_color)
+            splash_label.pack()
 
-    root.configure(bg='grey')
-    label = tk.Label(root, text="QT9 QMS File Sorter Setup", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
-    label.pack(pady=(20, 10))
-    button_frame = tk.Frame(root, bg='grey')
-    button_frame.place(relx=0.5, rely=0.5, anchor='center')
-    move_to_startup_btn = tk.Button(button_frame, text="Run App on Startup", command=run_move_to_startup, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    move_to_startup_btn.grid(row=0, column=0, pady=15)
-    open_qt9_folder_btn = tk.Button(button_frame, text="Open Application Logs", command=open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    open_qt9_folder_btn.grid(row=1, column=0, pady=20)
-    root.mainloop()
+            splash_root.after(duration * 1000, splash_root.destroy)
+            splash_root.mainloop()
+        except Exception as e:
+            logging.error(f'Failed to show splash screen: {str(e)}')
+
+    def run_move_to_startup(self):
+        """
+        Moves the application shortcut to the startup folder to run at system startup.
+        """
+        source_path = Path('C:/ProgramData/Microsoft/Windows/Start Menu/Programs')
+        username = os.getlogin()
+        destination_path = Path(f'C:/Users/{username}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup')
+        shortcut_name = 'QT9 QMS File Sorter.lnk'
+        source_shortcut_path = source_path / shortcut_name
+        destination_path.mkdir(parents=True, exist_ok=True)
+        if source_shortcut_path.exists():
+            shutil.copy2(source_shortcut_path, destination_path)
+            logging.info('Application setup to run on startup.')
+            messagebox.showinfo('Success', 'The application has been set to run on startup.')
+        else:
+            logging.error(f'Shortcut \'{shortcut_name}\' not found in the source directory.')
+
+    def open_qt9_folder(self):
+        """
+        Opens the application's log folder in the file explorer.
+        """
+        try:
+            os.startfile(str(Path.home() / 'AppData/Local/QT9 QMS File Sorter'))
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to open folder: {str(e)}')
+
+    def run_move_to_startup_threaded(self):
+        """
+        Wraps the run_move_to_startup method in a thread to prevent UI blocking.
+        """
+        operation_thread = threading.Thread(target=self.run_move_to_startup)
+        operation_thread.start()
+
+    def create_gui(self):
+        """
+        Creates and displays the main GUI for the application setup wizard.
+        """
+        root = tk.Tk()
+        self.setup_window(root, 400, 250, 'Setup Wizard')
+    
+        try:
+            icon_image = self.load_image(self.icon_image_paths, 'icon')
+            # Open the icon image using PIL
+            pil_image = Image.open(icon_image.filename)
+            # Convert the PIL image object to a Tkinter-compatible photo image
+            tk_image = ImageTk.PhotoImage(pil_image)
+            root.iconphoto(True, tk_image)
+        except Exception as e:
+            messagebox.showerror('Error', str(e))
+    
+        label = tk.Label(root, text='QT9 QMS File Sorter Setup', bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
+        label.pack(pady=(20, 10))
+    
+        button_frame = tk.Frame(root, bg='grey')
+        button_frame.place(relx=0.5, rely=0.5, anchor='center')
+    
+        move_to_startup_btn = tk.Button(button_frame, text='Run App on Startup', command=self.run_move_to_startup_threaded, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+        move_to_startup_btn.grid(row=0, column=0, pady=15)
+    
+        open_qt9_folder_btn = tk.Button(button_frame, text='Open Application Logs', command=self.open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+        open_qt9_folder_btn.grid(row=1, column=0, pady=20)
+    
+        root.mainloop()
+
+    def signal_handler(self, signum, frame):
+        """
+        Handles interrupt signals to gracefully shut down the application.
+
+        :param signum: The signal number.
+        :param frame: The current stack frame.
+        """
+        logging.info('Signal received, stopping observer.')
+        self.keep_running = False
+
+    def send_notification(self, original_file_name, new_file_name, destination_folder):
+        """
+        Sends a desktop notification about a file operation.
+
+        :param original_file_name: The original name of the file.
+        :param new_file_name: The new name of the file after operation.
+        :param destination_folder: The folder to which the file was moved.
+        """
+        try:
+            logging.info(f'Attempting to send notification for {new_file_name}')
+            notification.notify(
+                title='QT9 U Recording Transfer',
+                message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
+                timeout=5000
+            )
+        except Exception as e:
+            logging.error(f'An error occurred while trying to send a notification: {e}')
+
+    def move_files(self):
+        """
+        Moves files from the recordings path to their respective destination folders based on core file names.
+
+        This function iterates over all files in the recordings path, checks if the file name contains any of the core file names,
+        and moves the file to the corresponding destination folder. It also handles file name conflicts, permission errors,
+        and other exceptions during the file move operation. Notifications are sent for successful moves.
+        """
+        logging.info('Starting move_files function')
+        for filename in os.listdir(recordings_path):
+            logging.info(f'Processing file: {filename}')
+            new_filename = None
+            destination_folder = None
+            for core_file_name, folder in self.core_file_names.items():
+                if core_file_name in filename:
+                    logging.info(f'File {filename} matches core file name {core_file_name} and will be processed')
+                    _, file_extension = os.path.splitext(filename)
+                    new_filename = f'{core_file_name} {datetime.now().strftime("%m-%d-%Y")}{file_extension}'
+                    destination_folder = folder
+                    break
+            if new_filename and destination_folder:
+                source_file_path = os.path.join(recordings_path, filename)
+                destination_file_path = f'{destination_folder}/{new_filename}'
+                if os.path.exists(destination_file_path):
+                    logging.info(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
+                else:
+                    try:
+                        time.sleep(1)  # Wait for 1 second
+                        shutil.move(source_file_path, destination_file_path)
+                        logging.info(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
+                        self.send_notification(os.path.basename(source_file_path), new_filename, os.path.basename(destination_folder))
+                    except PermissionError as e:
+                        logging.error(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
+                    except IOError as e:
+                        logging.error(f'IO error during file move from {source_file_path} to {destination_file_path}. Error: {e}')
+                    except Exception as e:
+                        logging.error(f'An unexpected error occurred while moving {source_file_path} to {destination_file_path}. Error: {e}')
+                    except Exception as e:
+                        logging.error(f'An unexpected error occurred while moving {source_file_path} to {destination_file_path}. Error: {e}')
+            else:
+                logging.info(f'No matching core file name found for {filename}. The file will not be moved.')
+
+    def start_observer(self):
+        """
+        Starts a file system observer that watches for file creation in a specified path.
+
+        This function sets up an observer to monitor a directory for new files. When a new file is created,
+        it triggers the move_files function to process and potentially move the file to a designated folder.
+        The observer runs in a loop until the application is manually stopped.
+        """
+        event_handler = MyHandler(self)  # Pass the current instance of Application
+        observer = Observer()
+        observer.schedule(event_handler, recordings_path, recursive=False)
+        observer.start()
+        try:
+            while self.keep_running:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            observer.stop()
+        observer.join()
 
 class MyHandler(FileSystemEventHandler):
-    def on_created(self, event):
-        logging.info(f'The file {os.path.basename(event.src_path)} has been created!')
-        move_files()
+    def __init__(self, app_instance):
+        """
+        Initializes the MyHandler class with an application instance.
 
-def send_notification(original_file_name, new_file_name, destination_folder):
-    try:
-        logging.info(f'Attempting to send notification for {new_file_name}')
-        notification.notify(
-            title='QT9 U Recording Transfer',
-            message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
-            timeout=5000
-        )
-    except Exception as e:
-        logging.error(f'An error occurred while trying to send a notification: {e}')
-
-def move_files():
-    logging.info('Starting move_files function')
-    core_file_names = {
-        "QT9 QMS Change Control": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Change Control"),
-        "QT9 QMS Doc Control": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Document Control"),
-        "QT9 QMS Deviations": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Deviations"),
-        "QT9 QMS Inspections": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Inspections"),
-        "QT9 QMS CAPA_NCP": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\CAPA"),
-        "QT9 QMS Audit Management": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Audit"),
-        "QT9 QMS Supplier Surveys_Evaluations": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Supplier Surveys - Evaluations"),
-        "QT9 QMS Preventive Maintenance": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Preventative Maintenance"),
-        "QT9 QMS ECR_ECN": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\ECR-ECN"),
-        "QT9 QMS Customer Module": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Customer Feedback - Surveys"),
-        "QT9 QMS Training Module": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Training Module"),
-        "QT9 QMS Calibrations": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Calibrations"),
-        "QT9 QMS Test Module": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\TEST - DO NOT USE"),
-    }
-    for filename in os.listdir(recordings_path):
-        logging.info(f'Processing file: {filename}')
-        new_filename = None
-        destination_folder = None
-        for core_file_name, folder in core_file_names.items():
-            if core_file_name in filename:
-                logging.info(f'File {filename} matches core file name {core_file_name} and will be processed')
-                _, file_extension = os.path.splitext(filename)
-                new_filename = f"{core_file_name} {datetime.now().strftime('%m-%d-%Y')}{file_extension}"
-                destination_folder = folder
-                break
-
-        if new_filename and destination_folder:
-            source_file_path = os.path.join(recordings_path, filename)
-            destination_file_path = f"{destination_folder}/{new_filename}"
-            if os.path.exists(destination_file_path):
-                logging.info(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
-            else:
-                try:
-                    time.sleep(1)  # Wait for 1 second
-                    shutil.move(source_file_path, destination_file_path)
-                    logging.info(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
-                    send_notification(os.path.basename(source_file_path), new_filename, os.path.basename(destination_folder))
-                except PermissionError as e:
-                    logging.error(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
-                except IOError as e:
-                    logging.error(f'IOError encountered for {source_file_path} ({filename}). Error: {e}')
-                except Exception as e:
-                    logging.error(f'Unexpected error moving {source_file_path} ({filename}). Error: {e}')
-    logging.info('Completed move_files function')
-
-def signal_handler(signum, frame):
-    global keep_running
-    logging.info('Signal received, stopping observer.')
-    keep_running = False
-
-def main():
-    tray_thread = threading.Thread(target=setup_system_tray)
-    tray_thread.start()
-
-    show_splash_screen(2)
-
-    setup_thread = threading.Thread(target=create_gui)
-    setup_thread.start()
-
-    global keep_running
-    keep_running = True
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    event_handler = MyHandler()
-    observer = Observer()
-    observer.schedule(event_handler, path=recordings_path, recursive=False)
-    logging.info('Starting the observer')
-    observer.start()
-    logging.info(f'Observer started and is monitoring: {recordings_path}')
+        :param app_instance: The instance of the Application class to use for moving files when an event is triggered.
+        """
+        self.app_instance = app_instance
     
-    try:
-        while keep_running:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logging.info('KeyboardInterrupt received, stopping observer.')
-    except Exception as e:
-        logging.error(f'Unexpected error in main loop. Error: {e}')
-    finally:
-        observer.stop()
-        observer.join()
-        logging.info('Observer has been successfully stopped')
+    def on_created(self, event):
+        """
+        Handles the on_created event by moving files when a new file is detected in the watched directory.
 
-if __name__ == "__main__":
-    main()
+        :param event: The event object containing information about the created file.
+        """
+        logging.info(f'The file {os.path.basename(event.src_path)} has been created!')
+        self.app_instance.move_files()
+
+if __name__ == '__main__':
+    app = Application()
+    app.show_splash_screen()
+    app.show_gui()
+    app.setup_system_tray()
+    app.start_observer()
+    app.run()
