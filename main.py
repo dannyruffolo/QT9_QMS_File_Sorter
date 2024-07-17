@@ -21,7 +21,7 @@ from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
 # Define CURRENT_VERSION and GITHUB_REPO constants
-CURRENT_VERSION = "2.2.4"
+CURRENT_VERSION = "2.2.5"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
 # Configuration
