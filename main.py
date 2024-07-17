@@ -177,6 +177,7 @@ def show_update_gui(latest_version):
 
     update_window = tk.Tk()
     update_window.attributes('-topmost', True)
+    update_window.resizable(False, False)
 
     try:
         update_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
