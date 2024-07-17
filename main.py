@@ -11,8 +11,9 @@ import pystray
 import tempfile
 import requests
 from pystray import MenuItem as item
-from PIL import Image
+from PIL import Image, ImageTk
 from tkinter import messagebox
+from tkinter import ttk
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from watchdog.observers import Observer
@@ -56,7 +57,7 @@ def setup_system_tray():
             raise Exception("Both logo files could not be found.") from e
 
     # Menu items
-    menu = (item('Open Setup Wizard', show_gui),
+    menu = (item('Open Setup Wizard', show_main_gui),
             item('Check for Updates', check_for_updates), 
             item('Quit', quit_application),
             )
@@ -73,7 +74,7 @@ def setup_system_tray():
     icon_thread.daemon = True  # Daemonize thread to close it when the main program exits
     icon_thread.start()
 
-def create_gui():
+def main_gui():
     root = tk.Tk()
     root.title("Setup Wizard")
     
@@ -113,12 +114,41 @@ def create_gui():
     open_qt9_folder_btn.grid(row=2, column=0, pady=13)
     root.mainloop()
 
-def show_gui():
+def show_main_gui():
     def gui_thread():
-        create_gui()
+        main_gui()
     t = threading.Thread(target=gui_thread)
     t.daemon = True
     t.start()
+
+def show_up_to_date_window():
+    window = tk.Tk()
+    window.title("Update Check")
+    window_width = 232
+    window_height = 114
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+    x_coordinate = int((screen_width / 2) - (window_width / 2))
+    y_coordinate = int((screen_height / 2) - (window_height / 2))
+    window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
+    window.resizable(False, False)
+
+    # Disable minimize and maximize buttons
+    window.attributes('-toolwindow', True)
+
+    # Use a Frame as a container for better control over the layout
+    frame = ttk.Frame(window)
+    frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+    label = ttk.Label(frame, text="Your program is up to date.")
+    label.place(relx=0.5, rely=0.3, anchor='center')
+    
+    # Pack the OK button at the bottom of the frame, centered
+    ok_button = ttk.Button(frame, text="OK", command=window.destroy)
+    ok_button.pack(side=tk.BOTTOM, pady=(5, 0))
+
+    ok_button.place(anchor='se', relx=0.98, rely=1.0)
+    window.mainloop()
 
 def check_for_updates():
     try:
@@ -131,7 +161,7 @@ def check_for_updates():
         if latest_version_tuple > current_version_tuple:
             show_update_gui(latest_version)
         elif latest_version_tuple <= current_version_tuple:
-            messagebox.showinfo("Update Check", "Your program is up to date.")
+            show_up_to_date_window()    
     except Exception as e:
         print(f"Error checking for updates: {e}")
 
@@ -314,7 +344,7 @@ def main():
     tray_thread = threading.Thread(target=setup_system_tray)
     tray_thread.start()
 
-    setup_thread = threading.Thread(target=create_gui)
+    setup_thread = threading.Thread(target=main_gui)
     setup_thread.start()
 
     global keep_running
