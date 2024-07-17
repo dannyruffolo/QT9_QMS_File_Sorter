@@ -100,8 +100,6 @@ def main_gui():
 
     # Set the window's position to the center of the screen
     root.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-    root.attributes('-topmost', True)
-    root.resizable(False, False)
 
     root.configure(bg='grey')
     label = tk.Label(root, text="QT9 QMS File Sorter Setup", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
