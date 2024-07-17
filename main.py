@@ -20,7 +20,7 @@ from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
 # Define CURRENT_VERSION and GITHUB_REPO constants
-CURRENT_VERSION = "2.2.1"
+CURRENT_VERSION = "2.2.3"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
 # Configuration
@@ -134,6 +134,7 @@ def show_update_gui(latest_version):
         update_window.destroy()
 
     update_window = tk.Tk()
+    update_window.attributes('-topmost', True)
 
     try:
         update_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
