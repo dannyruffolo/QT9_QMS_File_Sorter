@@ -20,7 +20,7 @@ from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
 # Define CURRENT_VERSION and GITHUB_REPO constants
-CURRENT_VERSION = "2.2.3"
+CURRENT_VERSION = "2.2.4"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
 # Configuration
@@ -54,14 +54,24 @@ def setup_system_tray():
             icon_image = Image.open(icon_image_path)
         except FileNotFoundError as e:
             raise Exception("Both logo files could not be found.") from e
+
     # Menu items
     menu = (item('Open Setup Wizard', show_gui),
             item('Check for Updates', check_for_updates), 
             item('Quit', quit_application),
             )
-    # Create and run the system tray icon
+
+    # Create the system tray icon without running it immediately
     icon = pystray.Icon("QT9 QMS File Sorter", icon_image, "QT9 QMS File Sorter", menu)
-    icon.run()
+
+    # Define a function to run the icon's event loop in a separate thread
+    def run_icon():
+        icon.run()
+
+    # Create and start the thread
+    icon_thread = threading.Thread(target=run_icon)
+    icon_thread.daemon = True  # Daemonize thread to close it when the main program exits
+    icon_thread.start()
 
 def create_gui():
     root = tk.Tk()
