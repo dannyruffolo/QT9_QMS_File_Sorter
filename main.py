@@ -10,6 +10,7 @@ import tkinter as tk
 import pystray
 import tempfile
 import requests
+from config import core_file_names
 from pystray import MenuItem as item
 from PIL import Image, ImageTk
 from tkinter import messagebox
@@ -21,7 +22,7 @@ from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
 # Define CURRENT_VERSION and GITHUB_REPO constants
-CURRENT_VERSION = "2.2.5"
+CURRENT_VERSION = "2.2.6"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
 # Configuration
@@ -243,25 +244,10 @@ def download_and_install_update(latest_version):
 
 def periodic_check():
     check_for_updates()
-    threading.Timer(60, periodic_check).start()  # Check for updates every hour
+    threading.Timer(3600, periodic_check).start()  # Check for updates every hour
 
 def move_files():
     logging.info('Starting move_files function')
-    core_file_names = {
-        "QT9 QMS Change Control": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Change Control"),
-        "QT9 QMS Doc Control": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Document Control"),
-        "QT9 QMS Deviations": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Deviations"),
-        "QT9 QMS Inspections": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Inspections"),
-        "QT9 QMS CAPA_NCP": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\CAPA"),
-        "QT9 QMS Audit Management": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Audit"),
-        "QT9 QMS Supplier Surveys_Evaluations": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Supplier Surveys - Evaluations"),
-        "QT9 QMS Preventive Maintenance": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Preventative Maintenance"),
-        "QT9 QMS ECR_ECN": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\ECR-ECN"),
-        "QT9 QMS Customer Module": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Customer Feedback - Surveys"),
-        "QT9 QMS Training Module": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Training Module"),
-        "QT9 QMS Calibrations": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\Calibrations"),
-        "QT9 QMS Test Module": os.path.expanduser(r"~\Box\QT9 University\Training Recordings\TEST - DO NOT USE"),
-    }
     for filename in os.listdir(recordings_path):
         logging.info(f'Processing file: {filename}')
         new_filename = None
