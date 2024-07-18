@@ -10,18 +10,21 @@ import tkinter as tk
 import pystray
 import tempfile
 import requests
-from config import core_file_names
+import json
+import six
 from pystray import MenuItem as item
 from PIL import Image, ImageTk
-from tkinter import messagebox
-from tkinter import ttk
+from tkinter import messagebox, filedialog, scrolledtext
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
-# Define CURRENT_VERSION and GITHUB_REPO constants
+# Global variables
+global user_preferences
+user_preferences = {}
+selected_folder = ""  # To store the last selected folder
 CURRENT_VERSION = "2.2.6"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
@@ -89,7 +92,7 @@ def main_gui():
 
     # Window size
     window_width = 400
-    window_height = 280
+    window_height = 350
 
     # Get screen width and height
     screen_width = root.winfo_screenwidth()
@@ -113,6 +116,10 @@ def main_gui():
     move_to_startup_btn.grid(row=1, column=0, pady=13)
     open_qt9_folder_btn = tk.Button(button_frame, text="Open Application Logs", command=open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
     open_qt9_folder_btn.grid(row=2, column=0, pady=13)
+
+    open_config_btn = tk.Button(button_frame, text="Open Config", command=config_gui, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+    open_config_btn.grid(row=3, column=0, pady=13)  # Adjust row index as needed
+
     root.mainloop()
 
 def show_main_gui():
@@ -246,23 +253,157 @@ def periodic_check():
     check_for_updates()
     threading.Timer(3600, periodic_check).start()  # Check for updates every hour
 
+def select_destination_folder():
+    global selected_folder  # Declare as global to ensure it can be accessed
+    selected_folder = filedialog.askdirectory()
+    if selected_folder:  # Check if a folder was selected
+        destination_folder_label.config(text=selected_folder)  # Update the label with the selected folder path
+    else:
+        destination_folder_label.config(text="No folder selected")
+
+def add_to_preferences():
+    global selected_folder
+    file_name = file_name_entry.get()
+    if file_name and selected_folder:  # Ensure there's a file name entered and a folder selected
+        # Initialize the list for this file name if it doesn't exist
+        if file_name not in user_preferences:
+            user_preferences[file_name] = []
+        # Append the selected folder to the list for this file name
+        if selected_folder not in user_preferences[file_name]:
+            user_preferences[file_name].append(selected_folder)
+            update_preferences_display()  # Update the preferences display
+        file_name_entry.delete(0, tk.END)  # Clear the file name entry field
+        selected_folder = ""  # Reset the selected folder variable
+        destination_folder_label.config(text="No folder selected")  # Reset the label
+    else:
+        print("Please select a folder and enter a file name first.")
+
+def save_user_preferences(user_preferences):
+    modified_preferences = {}
+    for key, value in user_preferences.items():
+        if isinstance(value, list):
+            # Example conversion: list to comma-separated string
+            modified_preferences[key] = ','.join(map(str, value))
+        else:
+            modified_preferences[key] = value
+
+    preferences_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
+    with open(preferences_file_path, 'w') as file:
+        json.dump(user_preferences, file)
+    print("Preferences saved successfully.")
+    update_preferences_display()
+
+def update_preferences_display():
+    global preferences_display_label
+    display_text = ""
+    for file_name, folders in user_preferences.items():
+        display_text += f"{file_name}:\n" + "\n".join(folders) + "\n\n"
+    preferences_display_label.config(state=tk.NORMAL)
+    preferences_display_label.delete('1.0', tk.END)
+    preferences_display_label.insert(tk.END, display_text)
+    preferences_display_label.config(state=tk.DISABLED)
+
+def load_user_preferences():
+    try:
+        with open('user_preferences.json', 'r') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print("User preferences file not found. Using default settings.")
+        return {}
+    except json.JSONDecodeError:
+        print("Error decoding user preferences. Using default settings.")
+        return {}
+
+def config_gui():
+    global file_name_entry, destination_folder_label, preferences_display_label
+    config = tk.Tk()
+    config.title("File Sorter Configuration")
+
+    # Attempt to set the window icon with fallback paths
+    try:
+        config.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
+    except tk.TclError:
+        try:
+            config.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
+        except tk.TclError as e:
+            raise Exception("Both logo files could not be found.") from e
+
+    # Window size and position
+    window_width = 550
+    window_height = 475
+    screen_width = config.winfo_screenwidth()
+    screen_height = config.winfo_screenheight()
+    x_coordinate = int((screen_width / 2) - (window_width / 2))
+    y_coordinate = int((screen_height / 2) - (window_height / 2))
+    config.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
+
+    config.configure(bg='grey')
+    label = tk.Label(config, text="QT9 QMS File Sorter Configuration", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
+    label.pack(pady=(20, 10))
+
+    # Frame for buttons and inputs
+    input_frame = tk.Frame(config, bg='grey')
+    input_frame.pack(pady=(0, 20))
+
+    tk.Label(input_frame, text="File Name:", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 12)).pack(side=tk.LEFT, padx=(0, 10))
+    file_name_entry = tk.Entry(input_frame)
+    file_name_entry.pack(side=tk.LEFT)
+
+    button_frame = tk.Frame(config, bg='grey')
+    button_frame.pack(pady=(0, 20))
+
+    select_folder_button = tk.Button(button_frame, text="Select Folder", command=select_destination_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14))
+    select_folder_button.pack(side=tk.LEFT, padx=10)
+
+    add_button = tk.Button(button_frame, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14))
+    add_button.pack(side=tk.LEFT, padx=10)
+
+    destination_folder_label = tk.Label(config, text="No folder selected", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 12))
+    destination_folder_label.pack(pady=(10, 20))
+
+    preferences_display_label = scrolledtext.ScrolledText(config, height=10, width=50, font=('Segoe UI Variable', 12))
+    preferences_display_label.pack()
+    preferences_display_label.config(state=tk.DISABLED)
+
+    save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences))
+    save_button.pack(pady=(10, 0))
+
+    config.mainloop()
+
 def move_files():
+    global selected_folder, user_preferences
     logging.info('Starting move_files function')
+
+    global user_preferences  # Assuming user_preferences is defined globally
+
+    # Check if user_preferences is a string and convert it to a dictionary if so
+    if isinstance(user_preferences, str):
+        try:
+            user_preferences_dict = json.loads(user_preferences)
+        except json.JSONDecodeError:
+            logging.error("Error decoding JSON from user_preferences")
+            return
+    else:
+        user_preferences_dict = user_preferences
+
+
     for filename in os.listdir(recordings_path):
         logging.info(f'Processing file: {filename}')
         new_filename = None
-        destination_folder = None
-        for core_file_name, folder in core_file_names.items():
-            if core_file_name in filename:
-                logging.info(f'File {filename} matches core file name {core_file_name} and will be processed')
+
+        # Iterate over the dictionary of user preferences
+        for preference, folder in user_preferences_dict.items():
+            if preference in filename:
+                logging.info(f'File {filename} matches core file name {preference} and will be processed')
                 _, file_extension = os.path.splitext(filename)
-                new_filename = f"{core_file_name} {datetime.now().strftime('%m-%d-%Y')}{file_extension}"
+                new_filename = f"{preference} {datetime.now().strftime('%m-%d-%Y')}{file_extension}"
                 destination_folder = folder
                 break
 
         if new_filename and destination_folder:
             source_file_path = os.path.join(recordings_path, filename)
-            destination_file_path = f"{destination_folder}/{new_filename}"
+            destination_folder_path = destination_folder[0] if isinstance(destination_folder, list) else destination_folder
+            destination_file_path = os.path.join(destination_folder_path, new_filename)  # Corrected to use destination_folder_path
             if os.path.exists(destination_file_path):
                 logging.info(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
             else:
@@ -270,7 +411,8 @@ def move_files():
                     time.sleep(1)  # Wait for 1 second
                     shutil.move(source_file_path, destination_file_path)
                     logging.info(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
-                    send_notification(os.path.basename(source_file_path), new_filename, os.path.basename(destination_folder))
+                    # Assuming send_notification is defined elsewhere
+                    send_notification(os.path.basename(source_file_path), new_filename, os.path.basename(destination_folder_path))
                 except PermissionError as e:
                     logging.error(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
                 except IOError as e:
