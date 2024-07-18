@@ -11,7 +11,6 @@ import pystray
 import tempfile
 import requests
 import json
-import six
 from pystray import MenuItem as item
 from PIL import Image, ImageTk
 from tkinter import messagebox, filedialog, scrolledtext
