@@ -57,7 +57,7 @@ def setup_system_tray():
             raise Exception("Both logo files could not be found.") from e
 
     # Menu items
-    menu = (item('Open Setup Wizard', show_main_gui),
+    menu = (item('Open Menu', show_main_gui),
             item('Check for Updates', check_for_updates), 
             item('Quit', quit_application),
             )
@@ -76,7 +76,7 @@ def setup_system_tray():
 
 def main_gui():
     root = tk.Tk()
-    root.title("Setup Wizard")
+    root.title("Menu")
     
     try:
         root.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
@@ -102,11 +102,11 @@ def main_gui():
     root.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
 
     root.configure(bg='grey')
-    label = tk.Label(root, text="QT9 QMS File Sorter Setup", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
+    label = tk.Label(root, text="QT9 QMS File Sorter", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
     label.pack(pady=(20, 10))
     button_frame = tk.Frame(root, bg='grey')
     button_frame.place(relx=0.5, rely=0.55, anchor='center')
-    check_for_update_btn = tk.Button(button_frame, text="Check For Updates", command=check_for_updates, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+    check_for_update_btn = tk.Button(button_frame, text="Check For Updates", command=lambda: check_for_updates(True), fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
     check_for_update_btn.grid(row=0, column=0, pady=13)
     move_to_startup_btn = tk.Button(button_frame, text="Run App on Startup", command=run_move_to_startup, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
     move_to_startup_btn.grid(row=1, column=0, pady=13)
@@ -136,34 +136,37 @@ def show_up_to_date_window():
     # Disable minimize and maximize buttons
     window.attributes('-toolwindow', True)
 
+    window.configure(bg='grey')
+
     # Use a Frame as a container for better control over the layout
-    frame = ttk.Frame(window)
+    frame = tk.Frame(window, bg='grey')
     frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
-    label = ttk.Label(frame, text="Your program is up to date.")
+    label = tk.Label(frame, text="Your program is up to date.", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 10, 'bold'))
     label.place(relx=0.5, rely=0.3, anchor='center')
     
     # Pack the OK button at the bottom of the frame, centered
-    ok_button = ttk.Button(frame, text="OK", command=window.destroy)
+    ok_button = tk.Button(frame, text="OK", command=window.destroy, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
     ok_button.pack(side=tk.BOTTOM, pady=(5, 0))
 
     ok_button.place(anchor='se', relx=0.98, rely=1.0)
     window.mainloop()
 
-def check_for_updates():
+def check_for_updates(show_up_to_date=False):
     try:
         response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
         latest_version = response.json()['tag_name']
-        print(f"Latest version: {latest_version}")
-        # Convert version strings to tuples of integers for comparison
         latest_version_tuple = tuple(map(int, latest_version.strip('v').split('.')))
         current_version_tuple = tuple(map(int, CURRENT_VERSION.strip('v').split('.')))
         if latest_version_tuple > current_version_tuple:
             show_update_gui(latest_version)
-        elif latest_version_tuple <= current_version_tuple:
+        elif latest_version_tuple <= current_version_tuple and show_up_to_date:
             show_up_to_date_window()    
     except Exception as e:
         print(f"Error checking for updates: {e}")
+
+def system_tray_check_for_updates():
+    check_for_updates(show_up_to_date=True)
 
 def show_update_gui(latest_version):
     def on_install():
@@ -240,7 +243,7 @@ def download_and_install_update(latest_version):
 
 def periodic_check():
     check_for_updates()
-    threading.Timer(3600, periodic_check).start()  # Check for updates every hour
+    threading.Timer(60, periodic_check).start()  # Check for updates every hour
 
 def move_files():
     logging.info('Starting move_files function')
@@ -340,8 +343,9 @@ def signal_handler(signum, frame):
     keep_running = False
 
 def main():
+    check_for_updates(show_up_to_date=True)
     periodic_check()
-    
+
     tray_thread = threading.Thread(target=setup_system_tray)
     tray_thread.start()
 
