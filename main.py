@@ -12,7 +12,7 @@ import tempfile
 import requests
 import json
 from pystray import MenuItem as item
-from PIL import Image, ImageTk
+from PIL import Image
 from tkinter import messagebox, filedialog, scrolledtext
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -78,14 +78,14 @@ def setup_system_tray():
     icon_thread.start()
 
 def main_gui():
-    root = tk.Tk()
-    root.title("Menu")
+    main_window = tk.Tk()
+    main_window.title("Menu")
     
     try:
-        root.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
+        main_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
     except tk.TclError:
         try:
-            root.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
+            main_window.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
         except tk.TclError as e:
             raise Exception("Both logo files could not be found.") from e
 
@@ -94,20 +94,20 @@ def main_gui():
     window_height = 350
 
     # Get screen width and height
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
+    screen_width = main_window.winfo_screenwidth()
+    screen_height = main_window.winfo_screenheight()
 
     # Calculate x and y coordinates
     x_coordinate = int((screen_width / 2) - (window_width / 2))
     y_coordinate = int((screen_height / 2) - (window_height / 2))
 
     # Set the window's position to the center of the screen
-    root.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
+    main_window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
 
-    root.configure(bg='grey')
-    label = tk.Label(root, text="QT9 QMS File Sorter", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
+    main_window.configure(bg='grey')
+    label = tk.Label(main_window, text="QT9 QMS File Sorter", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
     label.pack(pady=(20, 10))
-    button_frame = tk.Frame(root, bg='grey')
+    button_frame = tk.Frame(main_window, bg='grey')
     button_frame.place(relx=0.5, rely=0.55, anchor='center')
     check_for_update_btn = tk.Button(button_frame, text="Check For Updates", command=lambda: check_for_updates(True), fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
     check_for_update_btn.grid(row=0, column=0, pady=13)
@@ -119,7 +119,7 @@ def main_gui():
     open_config_btn = tk.Button(button_frame, text="Open Config", command=config_gui, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
     open_config_btn.grid(row=3, column=0, pady=13)  # Adjust row index as needed
 
-    root.mainloop()
+    main_window.mainloop()
 
 def show_main_gui():
     def gui_thread():
@@ -262,6 +262,12 @@ def select_destination_folder():
 
 def add_to_preferences():
     global selected_folder
+    folder_path = destination_folder_label.cget("text")
+    file_name = file_name_entry.get()
+    if folder_path == "No folder selected" or not file_name:
+        messagebox.showwarning("Warning", "Please select a folder and enter a file name first.")
+        return
+
     file_name = file_name_entry.get()
     if file_name and selected_folder:  # Ensure there's a file name entered and a folder selected
         # Initialize the list for this file name if it doesn't exist
@@ -328,8 +334,8 @@ def config_gui():
             raise Exception("Both logo files could not be found.") from e
 
     # Window size and position
-    window_width = 550
-    window_height = 475
+    window_width = 810
+    window_height = 500
     screen_width = config.winfo_screenwidth()
     screen_height = config.winfo_screenheight()
     x_coordinate = int((screen_width / 2) - (window_width / 2))
@@ -344,29 +350,32 @@ def config_gui():
     input_frame = tk.Frame(config, bg='grey')
     input_frame.pack(pady=(0, 20))
 
-    tk.Label(input_frame, text="File Name:", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 12)).pack(side=tk.LEFT, padx=(0, 10))
-    file_name_entry = tk.Entry(input_frame)
+    tk.Label(input_frame, text="File Name Contains:", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 13)).pack(side=tk.LEFT, padx=(0, 5))
+    file_name_entry = tk.Entry(input_frame, width=35, font=('Segoe UI Variable', 13))
     file_name_entry.pack(side=tk.LEFT)
 
+    # Modify the button frame to include the destination folder label
     button_frame = tk.Frame(config, bg='grey')
-    button_frame.pack(pady=(0, 20))
-
-    select_folder_button = tk.Button(button_frame, text="Select Folder", command=select_destination_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14))
+    button_frame.pack(pady=(0, 10))
+    
+    select_folder_button = tk.Button(button_frame, text="Select Folder", command=select_destination_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
     select_folder_button.pack(side=tk.LEFT, padx=10)
-
-    add_button = tk.Button(button_frame, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14))
-    add_button.pack(side=tk.LEFT, padx=10)
-
-    destination_folder_label = tk.Label(config, text="No folder selected", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 12))
-    destination_folder_label.pack(pady=(10, 20))
-
-    preferences_display_label = scrolledtext.ScrolledText(config, height=10, width=50, font=('Segoe UI Variable', 12))
+    
+    destination_folder_label = tk.Label(button_frame, text="No folder selected", bg='white', fg='black', font=('Segoe UI Variable', 13))
+    destination_folder_label.pack(side=tk.LEFT, padx=10)
+    
+    # Initialize and pack the add_button above the preferences_display_label
+    add_button = tk.Button(config, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
+    add_button.pack(pady=(10, 10))  # Adjusted to pack before the preferences_display_label
+    
+    # Now, the preferences_display_label will follow here, ensuring the "Add to Preferences" button is centered above it
+    preferences_display_label = scrolledtext.ScrolledText(config, height=12, width=80, font=('Segoe UI Variable', 13))
     preferences_display_label.pack()
     preferences_display_label.config(state=tk.DISABLED)
-
-    save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences))
+    
+    save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences),  fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
     save_button.pack(pady=(10, 0))
-
+    
     config.mainloop()
 
 def move_files():
