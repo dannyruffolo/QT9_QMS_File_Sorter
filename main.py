@@ -6,62 +6,123 @@ import logging
 import signal
 import subprocess
 import threading
-import tkinter as tk
 import pystray
 import tempfile
 import requests
 import json
 from pystray import MenuItem as item
 from PIL import Image
-from tkinter import messagebox, filedialog, scrolledtext
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
+from PyQt5.QtCore import QMetaObject, Qt, pyqtSignal, QThread, QObject, Q_ARG, QTimer
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QHBoxLayout, QMessageBox, QFileDialog
+from PyQt5.QtGui import QIcon, QPixmap
 
-# Global variables
-global user_preferences
-user_preferences = {}
-selected_folder = ""  # To store the last selected folder
-CURRENT_VERSION = "2.2.6"
-GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
+def setup_logging():
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
+    log_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter")
+    if not os.path.exists(log_file_path):
+        os.makedirs(log_file_path)
+    log_file = os.path.join(log_file_path, 'app.log')
 
-# Configuration
-recordings_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
-log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
+    log_handler = RotatingFileHandler(log_file, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
+    log_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(log_format, datefmt='%m-%d-%Y %H:%M:%S')
+    log_handler.setFormatter(formatter)
 
-# Updated path for log_file to store it in the specified folder
-log_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter")
-if not os.path.exists(log_file_path):
-    os.makedirs(log_file_path)
-log_file = os.path.join(log_file_path, 'app.log')
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(log_handler)
 
-# Set up RotatingFileHandler
-log_handler = RotatingFileHandler(log_file, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
-log_handler.setLevel(logging.INFO)
-formatter = logging.Formatter(log_format, datefmt='%m-%d-%Y %H:%M:%S')
-log_handler.setFormatter(formatter)
+class GlobalState:
+    def __init__(self):
+        self.CURRENT_VERSION = "3.0.0"
+        self.GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
+        self.lock = threading.Lock()
+        self.recordings_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
+        self.user_preferences = {}
+        self.selected_folder = None
 
-# Get the root logger and set the handler
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(log_handler)
+global_state = GlobalState()
+
+class AppState:
+    def __init__(self):
+        self.user_preferences = {}
+        self.selected_folder = ""
+
+    def get_user_preferences(self):
+        return self.user_preferences
+
+    def set_user_preferences(self, preferences):
+        self.user_preferences = preferences
+
+    def get_selected_folder(self):
+        return self.selected_folder
+
+    def set_selected_folder(self, folder):
+        self.selected_folder = folder
+
+def show_message(message):
+    app = create_app_instance()
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Information)
+    msg_box.setText(message)
+    msg_box.setWindowTitle("Information")
+    msg_box.exec_()
+
+def handle_update_signal(message):
+    logging.info(f"Handling update signal with message: {message}")
+    if message == "up_to_date":
+        show_message("Your application is up to date.")
+    else:
+        show_update_gui("A new update is available.")
+
+class Worker(QObject):
+    update_signal = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+
+    def check_for_updates(self, show_up_to_date=False):
+        logging.info("Worker: Checking for updates")
+        try:
+            response = requests.get(f"https://api.github.com/repos/{global_state.GITHUB_REPO}/releases/latest")
+            response.raise_for_status()
+            latest_version = response.json()['tag_name']
+            latest_version_tuple = tuple(map(int, latest_version.strip('v').split('.')))
+            current_version_tuple = tuple(map(int, global_state.CURRENT_VERSION.strip('v').split('.')))
+            if latest_version_tuple > current_version_tuple:
+                self.update_signal.emit(latest_version)
+            elif latest_version_tuple <= current_version_tuple and show_up_to_date:
+                self.update_signal.emit("up_to_date")
+        except requests.exceptions.RequestException as req_err:
+            logging.error(f"Network error while checking for updates: {req_err}")
+        except json.JSONDecodeError as json_err:
+            logging.error(f"JSON parsing error while checking for updates: {json_err}")
+        except Exception as e:
+            logging.error(f"Unexpected error while checking for updates: {e}")
+        
+        time.sleep(2)  # Simulate delay
+        self.update_signal.emit("up_to_date" if show_up_to_date else "new_update")
+
+def check_for_updates(show_up_to_date=False):
+    logging.info("Main: Initiating check for updates")
+    worker = Worker()
+    worker.update_signal.connect(handle_update_signal)
+    QTimer.singleShot(0, lambda: worker.check_for_updates(show_up_to_date))
 
 def setup_system_tray():
     try:
-        icon_image_path = r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'
-        icon_image = Image.open(icon_image_path)
+        icon_image = Image.open("icon.png")
     except FileNotFoundError:
-        try:
-            icon_image_path = r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'
-            icon_image = Image.open(icon_image_path)
-        except FileNotFoundError as e:
-            raise Exception("Both logo files could not be found.") from e
+        icon_image = Image.new('RGB', (64, 64), color = 'red')
 
     # Menu items
     menu = (item('Open Menu', show_main_gui),
-            item('Check for Updates', check_for_updates), 
+            item('Check for Updates', lambda: check_for_updates(True)), 
             item('Quit', quit_application),
             )
 
@@ -77,149 +138,86 @@ def setup_system_tray():
     icon_thread.daemon = True  # Daemonize thread to close it when the main program exits
     icon_thread.start()
 
+def create_app_instance():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
+
+def center_window(window):
+    app = create_app_instance()
+    screen = app.primaryScreen().availableGeometry()
+    x_coordinate = (screen.width() - window.width()) // 2
+    y_coordinate = (screen.height() - window.height()) // 2
+    window.move(x_coordinate, y_coordinate)
+
 def main_gui():
-    main_window = tk.Tk()
-    main_window.title("Menu")
-    
+    main_window = QMainWindow()
+    main_window.setWindowTitle("Menu")
     try:
-        main_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
-    except tk.TclError:
+        main_window.setWindowIcon(QIcon(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'))
+    except Exception:
         try:
-            main_window.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
-        except tk.TclError as e:
+            main_window.setWindowIcon(QIcon(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'))
+        except Exception as e:
             raise Exception("Both logo files could not be found.") from e
-
-    # Window size
-    window_width = 400
-    window_height = 350
-
-    # Get screen width and height
-    screen_width = main_window.winfo_screenwidth()
-    screen_height = main_window.winfo_screenheight()
-
-    # Calculate x and y coordinates
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
-
-    # Set the window's position to the center of the screen
-    main_window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-
-    main_window.configure(bg='grey')
-    label = tk.Label(main_window, text="QT9 QMS File Sorter", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
-    label.pack(pady=(20, 10))
-    button_frame = tk.Frame(main_window, bg='grey')
-    button_frame.place(relx=0.5, rely=0.55, anchor='center')
-    check_for_update_btn = tk.Button(button_frame, text="Check For Updates", command=lambda: check_for_updates(True), fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    check_for_update_btn.grid(row=0, column=0, pady=13)
-    move_to_startup_btn = tk.Button(button_frame, text="Run App on Startup", command=run_move_to_startup, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    move_to_startup_btn.grid(row=1, column=0, pady=13)
-    open_qt9_folder_btn = tk.Button(button_frame, text="Open Application Logs", command=open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    open_qt9_folder_btn.grid(row=2, column=0, pady=13)
-
-    open_config_btn = tk.Button(button_frame, text="Open Config", command=config_gui, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    open_config_btn.grid(row=3, column=0, pady=13)  # Adjust row index as needed
-
-    main_window.mainloop()
+    main_widget = QWidget()
+    main_window.setCentralWidget(main_widget)
+    layout = QVBoxLayout(main_widget)
+    label = QLabel("QT9 QMS File Sorter")
+    label.setStyleSheet("color: #ffffff; background-color: grey; font: 18pt 'Segoe UI Variable';")
+    layout.addWidget(label)
+    check_for_update_btn = QPushButton("Check For Updates")
+    check_for_update_btn.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 14pt 'Segoe UI Variable';")
+    check_for_update_btn.clicked.connect(lambda: Worker().check_for_updates(True))
+    layout.addWidget(check_for_update_btn)
+    move_to_startup_btn = QPushButton("Run App on Startup")
+    move_to_startup_btn.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 14pt 'Segoe UI Variable';")
+    move_to_startup_btn.clicked.connect(run_move_to_startup)
+    layout.addWidget(move_to_startup_btn)
+    open_qt9_folder_btn = QPushButton("Open Application Logs")
+    open_qt9_folder_btn.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 14pt 'Segoe UI Variable';")
+    open_qt9_folder_btn.clicked.connect(open_qt9_folder)
+    layout.addWidget(open_qt9_folder_btn)
+    open_config_btn = QPushButton("Open Config")
+    open_config_btn.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 14pt 'Segoe UI Variable';")
+    open_config_btn.clicked.connect(config_gui)
+    layout.addWidget(open_config_btn)
+    main_window.resize(400, 350)
+    main_window.show()
 
 def show_main_gui():
-    def gui_thread():
-        main_gui()
-    t = threading.Thread(target=gui_thread)
-    t.daemon = True
-    t.start()
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    main_gui()
+    app.exec_()
 
-def show_up_to_date_window():
-    window = tk.Tk()
-    window.title("Update Check")
-    window_width = 232
-    window_height = 114
-    screen_width = window.winfo_screenwidth()
-    screen_height = window.winfo_screenheight()
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
-    window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-    window.resizable(False, False)
+def show_update_gui(message):
+    app = create_app_instance()
+    window = QMainWindow()
+    window.setWindowTitle("Update Check")
+    window.setFixedSize(232, 114)
+    center_window(window)
+    window.setWindowFlags(window.windowFlags() & ~Qt.WindowMinMaxButtonsHint)
 
-    # Disable minimize and maximize buttons
-    window.attributes('-toolwindow', True)
+    main_widget = QWidget()
+    main_widget.setStyleSheet("background-color: grey;")
+    window.setCentralWidget(main_widget)
+    layout = QVBoxLayout(main_widget)
+    layout.setContentsMargins(10, 10, 10, 10)
 
-    window.configure(bg='grey')
+    label = QLabel(f"New version available: {message}")
+    label.setStyleSheet("color: #ffffff; font: bold 10pt 'Segoe UI Variable';")
+    label.setAlignment(Qt.AlignCenter)
+    layout.addWidget(label)
 
-    # Use a Frame as a container for better control over the layout
-    frame = tk.Frame(window, bg='grey')
-    frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+    ok_button = QPushButton("OK")
+    ok_button.setStyleSheet("color: #ffffff; background-color: #0056b8; font: bold 10pt 'Segoe UI Variable';")
+    ok_button.clicked.connect(window.close)
+    layout.addWidget(ok_button, alignment=Qt.AlignRight)
 
-    label = tk.Label(frame, text="Your program is up to date.", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 10, 'bold'))
-    label.place(relx=0.5, rely=0.3, anchor='center')
-    
-    # Pack the OK button at the bottom of the frame, centered
-    ok_button = tk.Button(frame, text="OK", command=window.destroy, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
-    ok_button.pack(side=tk.BOTTOM, pady=(5, 0))
-
-    ok_button.place(anchor='se', relx=0.98, rely=1.0)
-    window.mainloop()
-
-def check_for_updates(show_up_to_date=False):
-    try:
-        response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
-        latest_version = response.json()['tag_name']
-        latest_version_tuple = tuple(map(int, latest_version.strip('v').split('.')))
-        current_version_tuple = tuple(map(int, CURRENT_VERSION.strip('v').split('.')))
-        if latest_version_tuple > current_version_tuple:
-            show_update_gui(latest_version)
-        elif latest_version_tuple <= current_version_tuple and show_up_to_date:
-            show_up_to_date_window()    
-    except Exception as e:
-        print(f"Error checking for updates: {e}")
-
-def system_tray_check_for_updates():
-    check_for_updates(show_up_to_date=True)
-
-def show_update_gui(latest_version):
-    def on_install():
-        download_and_install_update(latest_version)
-        update_window.destroy()
-
-    def on_decline():
-        update_window.destroy()
-
-    update_window = tk.Tk()
-    update_window.attributes('-topmost', True)
-    update_window.resizable(False, False)
-
-    try:
-        update_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
-    except tk.TclError:
-        try:
-            update_window.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
-        except tk.TclError as e:
-            raise Exception("Both logo files could not be found.") from e
-    
-    # Window size and position
-    window_width = 300
-    window_height = 150
-    screen_width = update_window.winfo_screenwidth()
-    screen_height = update_window.winfo_screenheight()
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
-    update_window.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-
-    update_window.configure(bg='grey')
-    update_window.title("Update Available")
-    
-    label = tk.Label(update_window, text=f"Version {latest_version} is available.\nDo you want to install the update?", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 10, 'bold'))
-    label.place(relx=0.5, rely=0.3, anchor='center')
-    
-    button_frame = tk.Frame(update_window, bg='grey')
-    button_frame.place(relx=0.5, rely=0.6, anchor='center')
-    
-    install_btn = tk.Button(button_frame, text="Install", command=on_install, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
-    install_btn.grid(row=0, column=0, padx=10)
-    
-    later_btn = tk.Button(button_frame, text="Later", command=on_decline, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
-    later_btn.grid(row=0, column=1, padx=10)
-    
-    update_window.mainloop()
+    window.show()
 
 def uninstall_old_version():
     try:
@@ -235,167 +233,164 @@ def uninstall_old_version():
 
 def download_and_install_update(latest_version):
     try:
-        download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{latest_version}/FileSorter_{latest_version}_Installer.exe"
+        download_url = f"https://github.com/{global_state.GITHUB_REPO}/releases/download/{latest_version}/FileSorter_{latest_version}_Installer.exe"
         response = requests.get(download_url)
+        response.raise_for_status()  # Ensure we catch HTTP errors
         temp_dir = tempfile.mkdtemp()
         installer_path = os.path.join(temp_dir, "FileSorter_Installer.exe")
         with open(installer_path, 'wb') as file:
             file.write(response.content)
-        messagebox.showinfo("Update", "Download completed. Starting the installer.")
+        
+        app = create_app_instance()
+        QMessageBox.information(None, "Update", "Download completed. Starting the installer.")
+        
         os.startfile(installer_path)
         uninstall_old_version()
         sys.exit()  # Exit the current process to allow the installer to run
+
+    except requests.exceptions.HTTPError as http_err:
+        logging.error(f"HTTP error occurred while downloading the update: {http_err}")
+    except requests.exceptions.ConnectionError as conn_err:
+        logging.error(f"Connection error occurred while downloading the update: {conn_err}")
+    except requests.exceptions.Timeout as timeout_err:
+        logging.error(f"Timeout error occurred while downloading the update: {timeout_err}")
+    except requests.exceptions.RequestException as req_err:
+        logging.error(f"An error occurred while downloading the update: {req_err}")
+    except subprocess.CalledProcessError as sub_err:
+        logging.error(f"An error occurred while installing the update: {sub_err}")
     except Exception as e:
-        messagebox.showerror("Update Error", f"Failed to download and install update: {e}")
+        logging.error(f"An unexpected error occurred: {e}")
+
+def show_error_message(message):
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    error_dialog = QMessageBox()
+    error_dialog.setIcon(QMessageBox.Critical)
+    error_dialog.setText(message)
+    error_dialog.setWindowTitle("Error")
+    error_dialog.exec_()
 
 def periodic_check():
     check_for_updates()
-    threading.Timer(3600, periodic_check).start()  # Check for updates every hour
+    threading.Timer(3600, periodic_check).start()
 
-def select_destination_folder():
-    global selected_folder  # Declare as global to ensure it can be accessed
-    selected_folder = filedialog.askdirectory()
-    if selected_folder:  # Check if a folder was selected
-        destination_folder_label.config(text=selected_folder)  # Update the label with the selected folder path
+def select_destination_folder(app_state):
+    folder = QFileDialog.getExistingDirectory()
+    if folder:
+        QMetaObject.invokeMethod(lambda: app_state.set_selected_folder(folder), Qt.QueuedConnection)
     else:
-        destination_folder_label.config(text="No folder selected")
+        QMetaObject.invokeMethod(lambda: show_message("No folder selected"), Qt.QueuedConnection)
 
-def add_to_preferences():
-    global selected_folder
-    folder_path = destination_folder_label.cget("text")
-    file_name = file_name_entry.get()
+def add_to_preferences(app_state, destination_folder_label, file_name_entry):
+    folder_path = destination_folder_label.text()
+    file_name = file_name_entry.text()
     if folder_path == "No folder selected" or not file_name:
-        messagebox.showwarning("Warning", "Please select a folder and enter a file name first.")
+        show_message("Please select a folder and enter a file name.")
         return
 
-    file_name = file_name_entry.get()
-    if file_name and selected_folder:  # Ensure there's a file name entered and a folder selected
-        # Initialize the list for this file name if it doesn't exist
-        if file_name not in user_preferences:
-            user_preferences[file_name] = []
-        # Append the selected folder to the list for this file name
-        if selected_folder not in user_preferences[file_name]:
-            user_preferences[file_name].append(selected_folder)
-            update_preferences_display()  # Update the preferences display
-        file_name_entry.delete(0, tk.END)  # Clear the file name entry field
-        selected_folder = ""  # Reset the selected folder variable
-        destination_folder_label.config(text="No folder selected")  # Reset the label
-    else:
-        print("Please select a folder and enter a file name first.")
+    with global_state.lock:
+        app_state.preferences[file_name] = folder_path
 
-def save_user_preferences(user_preferences):
-    modified_preferences = {}
-    for key, value in user_preferences.items():
-        if isinstance(value, list):
-            # Example conversion: list to comma-separated string
-            modified_preferences[key] = ','.join(map(str, value))
-        else:
-            modified_preferences[key] = value
+    QMetaObject.invokeMethod(preferences_display_label, "append", Qt.QueuedConnection, Q_ARG(str, f"Added {file_name}: {folder_path} to preferences"))
 
-    preferences_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
-    with open(preferences_file_path, 'w') as file:
-        json.dump(user_preferences, file)
-    print("Preferences saved successfully.")
-    update_preferences_display()
+def save_user_preferences(app_state):
+    with global_state.lock:
+        app_state.save_user_preferences()
+    QMetaObject.invokeMethod(preferences_display_label, "append", Qt.QueuedConnection, Q_ARG(str, "Preferences saved successfully."))
+    update_preferences_display(app_state, preferences_display_label)
 
-def update_preferences_display():
-    global preferences_display_label
+def update_preferences_display(app_state, preferences_display_label):
+    user_preferences = app_state.get_user_preferences()
     display_text = ""
     for file_name, folders in user_preferences.items():
-        display_text += f"{file_name}:\n" + "\n".join(folders) + "\n\n"
-    preferences_display_label.config(state=tk.NORMAL)
-    preferences_display_label.delete('1.0', tk.END)
-    preferences_display_label.insert(tk.END, display_text)
-    preferences_display_label.config(state=tk.DISABLED)
+        display_text += f"{file_name}: {folders}\n"
+    QMetaObject.invokeMethod(preferences_display_label, "setPlainText", Qt.QueuedConnection, Q_ARG(str, display_text))
 
-def load_user_preferences():
+def load_user_preferences(app_state):
+    preferences_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
     try:
-        with open('user_preferences.json', 'r') as file:
-            return json.load(file)
+        with open(preferences_file_path, 'r') as file:
+            preferences = json.load(file)
+            app_state.set_user_preferences(preferences)
     except FileNotFoundError:
-        print("User preferences file not found. Using default settings.")
-        return {}
+        show_message("Preferences file not found.")
     except json.JSONDecodeError:
-        print("Error decoding user preferences. Using default settings.")
-        return {}
+        show_message("Error decoding preferences file.")
 
-def config_gui():
+def config_gui(app_state):
     global file_name_entry, destination_folder_label, preferences_display_label
-    config = tk.Tk()
-    config.title("File Sorter Configuration")
+    app = create_app_instance()
+    config = QMainWindow()
+    config.setWindowTitle("File Sorter Configuration")
+    config.setFixedSize(810, 500)
+    center_window(config)
 
-    # Attempt to set the window icon with fallback paths
-    try:
-        config.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
-    except tk.TclError:
-        try:
-            config.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
-        except tk.TclError as e:
-            raise Exception("Both logo files could not be found.") from e
+    main_widget = QWidget()
+    main_widget.setStyleSheet("background-color: grey;")
+    config.setCentralWidget(main_widget)
+    layout = QVBoxLayout(main_widget)
+    layout.setContentsMargins(10, 10, 10, 10)
 
-    # Window size and position
-    window_width = 810
-    window_height = 500
-    screen_width = config.winfo_screenwidth()
-    screen_height = config.winfo_screenheight()
-    x_coordinate = int((screen_width / 2) - (window_width / 2))
-    y_coordinate = int((screen_height / 2) - (window_height / 2))
-    config.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
+    label = QLabel("QT9 QMS File Sorter Configuration")
+    label.setStyleSheet("color: #ffffff; font: 18pt 'Segoe UI Variable';")
+    label.setAlignment(Qt.AlignCenter)
+    layout.addWidget(label)
 
-    config.configure(bg='grey')
-    label = tk.Label(config, text="QT9 QMS File Sorter Configuration", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
-    label.pack(pady=(20, 10))
+    input_frame = QHBoxLayout()
+    layout.addLayout(input_frame)
 
-    # Frame for buttons and inputs
-    input_frame = tk.Frame(config, bg='grey')
-    input_frame.pack(pady=(0, 20))
+    file_name_label = QLabel("File Name Contains:")
+    file_name_label.setStyleSheet("color: #ffffff; font: 13pt 'Segoe UI Variable';")
+    input_frame.addWidget(file_name_label)
 
-    tk.Label(input_frame, text="File Name Contains:", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 13)).pack(side=tk.LEFT, padx=(0, 5))
-    file_name_entry = tk.Entry(input_frame, width=35, font=('Segoe UI Variable', 13))
-    file_name_entry.pack(side=tk.LEFT)
+    file_name_entry = QLineEdit()
+    file_name_entry.setStyleSheet("font: 13pt 'Segoe UI Variable';")
+    input_frame.addWidget(file_name_entry)
 
-    # Modify the button frame to include the destination folder label
-    button_frame = tk.Frame(config, bg='grey')
-    button_frame.pack(pady=(0, 10))
-    
-    select_folder_button = tk.Button(button_frame, text="Select Folder", command=select_destination_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
-    select_folder_button.pack(side=tk.LEFT, padx=10)
-    
-    destination_folder_label = tk.Label(button_frame, text="No folder selected", bg='white', fg='black', font=('Segoe UI Variable', 13))
-    destination_folder_label.pack(side=tk.LEFT, padx=10)
-    
-    # Initialize and pack the add_button above the preferences_display_label
-    add_button = tk.Button(config, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
-    add_button.pack(pady=(10, 10))  # Adjusted to pack before the preferences_display_label
-    
-    # Now, the preferences_display_label will follow here, ensuring the "Add to Preferences" button is centered above it
-    preferences_display_label = scrolledtext.ScrolledText(config, height=12, width=80, font=('Segoe UI Variable', 13))
-    preferences_display_label.pack()
-    preferences_display_label.config(state=tk.DISABLED)
-    
-    save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences),  fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
-    save_button.pack(pady=(10, 0))
-    
-    config.mainloop()
+    button_frame = QHBoxLayout()
+    layout.addLayout(button_frame)
+
+    select_folder_button = QPushButton("Select Folder")
+    select_folder_button.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 13pt 'Segoe UI Variable';")
+    select_folder_button.clicked.connect(lambda: select_destination_folder(app_state))
+    button_frame.addWidget(select_folder_button)
+
+    destination_folder_label = QLabel("No folder selected")
+    destination_folder_label.setStyleSheet("background-color: white; color: black; font: 13pt 'Segoe UI Variable';")
+    button_frame.addWidget(destination_folder_label)
+
+    add_button = QPushButton("Add to Preferences")
+    add_button.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 13pt 'Segoe UI Variable';")
+    add_button.clicked.connect(lambda: add_to_preferences(app_state, destination_folder_label, file_name_entry))
+    layout.addWidget(add_button)
+
+    preferences_display_label = QTextEdit()
+    preferences_display_label.setStyleSheet("font: 13pt 'Segoe UI Variable';")
+    preferences_display_label.setReadOnly(True)
+    layout.addWidget(preferences_display_label)
+
+    save_button = QPushButton("Save Preferences")
+    save_button.setStyleSheet("color: #ffffff; background-color: #0056b8; font: 13pt 'Segoe UI Variable';")
+    save_button.clicked.connect(lambda: save_user_preferences(app_state))
+    layout.addWidget(save_button)
+
+    config.show()
 
 def move_files():
-    global selected_folder, user_preferences
+    global selected_folder
     logging.info('Starting move_files function')
 
     global user_preferences  # Assuming user_preferences is defined globally
 
     # Check if user_preferences is a string and convert it to a dictionary if so
-    if isinstance(user_preferences, str):
-        try:
-            user_preferences_dict = json.loads(user_preferences)
-        except json.JSONDecodeError:
-            logging.error("Error decoding JSON from user_preferences")
-            return
-    else:
-        user_preferences_dict = user_preferences
+    with global_state.lock:
+        if isinstance(global_state.user_preferences, str):
+            user_preferences = json.loads(global_state.user_preferences)
+        else:
+            user_preferences_dict = global_state.user_preferences
 
-
-    for filename in os.listdir(recordings_path):
+    for filename in os.listdir(global_state.recordings_path):
         logging.info(f'Processing file: {filename}')
         new_filename = None
 
@@ -409,7 +404,7 @@ def move_files():
                 break
 
         if new_filename and destination_folder:
-            source_file_path = os.path.join(recordings_path, filename)
+            source_file_path = os.path.join(global_state.recordings_path, filename)
             destination_folder_path = destination_folder[0] if isinstance(destination_folder, list) else destination_folder
             destination_file_path = os.path.join(destination_folder_path, new_filename)  # Corrected to use destination_folder_path
             if os.path.exists(destination_file_path):
@@ -455,39 +450,55 @@ def run_move_to_startup():
         os.makedirs(destination_path, exist_ok=True)
         if os.path.exists(source_shortcut_path):
             shutil.copy2(source_shortcut_path, destination_path)
-            messagebox.showinfo("Success", f"Application setup to run on startup.")
+            app = QApplication(sys.argv)
+            QMessageBox.information(None, "Success", "Application setup to run on startup.")
         else:
-            messagebox.showerror("Error", f"Shortcut '{shortcut_name}' not found in the source directory.")
+            app = QApplication(sys.argv)
+            QMessageBox.critical(None, "Error", f"Shortcut '{shortcut_name}' not found in the source directory.")
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to move shortcut: {str(e)}")
+        app = QApplication(sys.argv)
+        QMessageBox.critical(None, "Error", f"Failed to move shortcut: {str(e)}")
 
 def open_qt9_folder():
     try:
         os.startfile(os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter"))
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
+        app = QApplication(sys.argv)
+        QMessageBox.critical(None, "Error", f"Failed to open folder: {str(e)}")
 
 def quit_application(icon, item):
     icon.stop()
-    global keep_running
-    keep_running = False
+    QApplication.quit()
     os._exit(0)
 
 def signal_handler(signum, frame):
-    global keep_running
-    logging.info('Signal received, stopping observer.')
-    keep_running = False
+    QApplication.quit()
 
 def main():
-    check_for_updates(show_up_to_date=True)
-    periodic_check()
+    setup_logging()
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
 
-    tray_thread = threading.Thread(target=setup_system_tray)
-    tray_thread.start()
+    # Create the worker and the thread
+    worker = Worker()
+    worker_thread = QThread()
+    
+    # Move the worker to the thread
+    worker.moveToThread(worker_thread)
+    
+    # Start the thread
+    worker_thread.start()
+    
+    # Check for updates
+    check_for_updates()
 
-    setup_thread = threading.Thread(target=main_gui)
-    setup_thread.start()
-
+    # Setup the system tray
+    setup_system_tray()
+    
+    # Show the main GUI
+    show_main_gui()
+    
     global keep_running
     keep_running = True
     signal.signal(signal.SIGINT, signal_handler)
@@ -495,10 +506,10 @@ def main():
 
     event_handler = MyHandler()
     observer = Observer()
-    observer.schedule(event_handler, path=recordings_path, recursive=False)
+    observer.schedule(event_handler, path=global_state.recordings_path, recursive=False)
     logging.info('Starting the observer')
     observer.start()
-    logging.info(f'Observer started and is monitoring: {recordings_path}')
+    logging.info(f'Observer started and is monitoring: {global_state.recordings_path}')
     
     try:
         while keep_running:
@@ -511,6 +522,10 @@ def main():
         observer.stop()
         observer.join()
         logging.info('Observer has been successfully stopped')
+        worker_thread.quit()
+        worker_thread.wait()
+
+    app.exec_()
 
 if __name__ == "__main__":
     main()
