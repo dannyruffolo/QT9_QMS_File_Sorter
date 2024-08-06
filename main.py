@@ -11,6 +11,8 @@ import pystray
 import tempfile
 import requests
 import json
+import queue
+from queue import Queue, Empty
 from pystray import MenuItem as item
 from PIL import Image
 from tkinter import messagebox, filedialog, scrolledtext
@@ -77,10 +79,28 @@ def setup_system_tray():
     icon_thread.daemon = True  # Daemonize thread to close it when the main program exits
     icon_thread.start()
 
-def main_gui():
-    main_window = tk.Tk()
+gui_queue = queue.Queue()
+
+root = tk.Tk()
+root.withdraw()
+
+def create_main_gui():
+    gui_queue.put(show_main_gui)
+
+def process_queue():
+    try:
+        while True:
+            command = gui_queue.get_nowait()
+            command()
+    except queue.Empty:
+        pass
+    root.after(100, process_queue)
+
+def show_main_gui():
+
+    main_window = tk.Toplevel(root)
     main_window.title("Menu")
-    
+
     try:
         main_window.iconbitmap(r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico')
     except tk.TclError:
@@ -119,17 +139,15 @@ def main_gui():
     open_config_btn = tk.Button(button_frame, text="Open Config", command=config_gui, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
     open_config_btn.grid(row=3, column=0, pady=13)  # Adjust row index as needed
 
+    process_queue()
     main_window.mainloop()
 
-def show_main_gui():
-    def gui_thread():
-        main_gui()
-    t = threading.Thread(target=gui_thread)
-    t.daemon = True
-    t.start()
-
 def show_up_to_date_window():
-    window = tk.Tk()
+    def close_window():
+        window.destroy()
+        window.quit()
+
+    window = tk.Toplevel(root)
     window.title("Update Check")
     window_width = 232
     window_height = 114
@@ -153,7 +171,7 @@ def show_up_to_date_window():
     label.place(relx=0.5, rely=0.3, anchor='center')
     
     # Pack the OK button at the bottom of the frame, centered
-    ok_button = tk.Button(frame, text="OK", command=window.destroy, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
+    ok_button = tk.Button(frame, text="OK", command=close_window, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 10, 'bold'), width=8)
     ok_button.pack(side=tk.BOTTOM, pady=(5, 0))
 
     ok_button.place(anchor='se', relx=0.98, rely=1.0)
@@ -162,14 +180,15 @@ def show_up_to_date_window():
 def check_for_updates(show_up_to_date=False):
     try:
         response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
+        response.raise_for_status()  # Ensure the request was successful
         latest_version = response.json()['tag_name']
         latest_version_tuple = tuple(map(int, latest_version.strip('v').split('.')))
         current_version_tuple = tuple(map(int, CURRENT_VERSION.strip('v').split('.')))
         if latest_version_tuple > current_version_tuple:
             show_update_gui(latest_version)
-        elif latest_version_tuple <= current_version_tuple and show_up_to_date:
-            show_up_to_date_window()    
-    except Exception as e:
+        elif show_up_to_date:
+            show_up_to_date_window()
+    except requests.RequestException as e:
         print(f"Error checking for updates: {e}")
 
 def system_tray_check_for_updates():
@@ -183,7 +202,7 @@ def show_update_gui(latest_version):
     def on_decline():
         update_window.destroy()
 
-    update_window = tk.Tk()
+    update_window = tk.Toplevel(root)
     update_window.attributes('-topmost', True)
     update_window.resizable(False, False)
 
@@ -193,8 +212,8 @@ def show_update_gui(latest_version):
         try:
             update_window.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
         except tk.TclError as e:
-            raise Exception("Both logo files could not be found.") from e
-    
+            print("Both logo files could not be found.")
+
     # Window size and position
     window_width = 300
     window_height = 150
@@ -225,7 +244,7 @@ def uninstall_old_version():
     try:
         uninstaller_path = r'C:\Program Files\QT9 QMS File Sorter\unins000.exe'
         if os.path.exists(uninstaller_path):
-            subprocess.run(uninstaller_path + ' /SILENT', check=True)  # '/SILENT' is an example flag for silent uninstallation
+            subprocess.run([uninstaller_path, '/SILENT'], check=True)  # Run with silent flag
             print("Old version uninstalled successfully.")
         else:
             print("Uninstaller not found. Proceeding with the installation of the new version.")
@@ -236,14 +255,17 @@ def uninstall_old_version():
 def download_and_install_update(latest_version):
     try:
         download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{latest_version}/FileSorter_{latest_version}_Installer.exe"
-        response = requests.get(download_url)
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()  # Ensure the download request was successful
         temp_dir = tempfile.mkdtemp()
         installer_path = os.path.join(temp_dir, "FileSorter_Installer.exe")
         with open(installer_path, 'wb') as file:
-            file.write(response.content)
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
         messagebox.showinfo("Update", "Download completed. Starting the installer.")
         os.startfile(installer_path)
         uninstall_old_version()
+        shutil.rmtree(temp_dir)
         sys.exit()  # Exit the current process to allow the installer to run
     except Exception as e:
         messagebox.showerror("Update Error", f"Failed to download and install update: {e}")
@@ -321,7 +343,7 @@ def load_user_preferences():
 
 def config_gui():
     global file_name_entry, destination_folder_label, preferences_display_label
-    config = tk.Tk()
+    config = tk.Toplevel(root)
     config.title("File Sorter Configuration")
 
     # Attempt to set the window icon with fallback paths
@@ -482,11 +504,10 @@ def main():
     check_for_updates(show_up_to_date=True)
     periodic_check()
 
-    tray_thread = threading.Thread(target=setup_system_tray)
-    tray_thread.start()
+    setup_system_tray()
 
-    setup_thread = threading.Thread(target=main_gui)
-    setup_thread.start()
+    root.after(100, show_main_gui)
+    root.mainloop()
 
     global keep_running
     keep_running = True
