@@ -22,18 +22,18 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
-# Global variables
-global user_preferences
-user_preferences = {}
-selected_folder = ""  # To store the last selected folder
-CURRENT_VERSION = "2.2.6"
+CURRENT_VERSION = "3.0.0"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 
-# Configuration
-recordings_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
-log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
+global user_preferences
+target_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
+user_preferences = {}
+selected_folder = ""  # To store the last selected folder
+gui_queue = queue.Queue()
+root = tk.Tk()
+root.withdraw()
 
-# Updated path for log_file to store it in the specified folder
+log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
 log_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter")
 if not os.path.exists(log_file_path):
     os.makedirs(log_file_path)
@@ -50,39 +50,31 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 
+keep_running = threading.Event()
+tray_icon = None
+tray_icon_lock = threading.Lock()
+
 def setup_system_tray():
-    try:
-        icon_image_path = r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'
-        icon_image = Image.open(icon_image_path)
-    except FileNotFoundError:
+    global tray_icon
+    with tray_icon_lock:
+        if tray_icon is not None:
+            return  # Tray icon already created
         try:
-            icon_image_path = r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'
+            icon_image_path = r'C:\Program Files\QT9 QMS File Sorter\app_icon.ico'
             icon_image = Image.open(icon_image_path)
-        except FileNotFoundError as e:
-            raise Exception("Both logo files could not be found.") from e
+        except FileNotFoundError:
+            try:
+                icon_image_path = r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico'
+                icon_image = Image.open(icon_image_path)
+            except FileNotFoundError as e:
+                raise Exception("Both logo files could not be found.") from e
 
-    # Menu items
-    menu = (item('Open Menu', show_main_gui),
-            item('Check for Updates', check_for_updates), 
-            item('Quit', quit_application),
-            )
+        menu = (item('Open Menu', lambda: gui_queue.put(show_main_gui)),
+                item('Check for Updates', lambda: gui_queue.put(system_tray_check_for_updates)),
+                item('Quit', quit_application))
 
-    # Create the system tray icon without running it immediately
-    icon = pystray.Icon("QT9 QMS File Sorter", icon_image, "QT9 QMS File Sorter", menu)
-
-    # Define a function to run the icon's event loop in a separate thread
-    def run_icon():
-        icon.run()
-
-    # Create and start the thread
-    icon_thread = threading.Thread(target=run_icon)
-    icon_thread.daemon = True  # Daemonize thread to close it when the main program exits
-    icon_thread.start()
-
-gui_queue = queue.Queue()
-
-root = tk.Tk()
-root.withdraw()
+        tray_icon = pystray.Icon("QT9 QMS File Sorter", icon_image, "QT9 QMS File Sorter", menu)
+        tray_icon.run()
 
 def create_main_gui():
     gui_queue.put(show_main_gui)
@@ -140,7 +132,6 @@ def show_main_gui():
     open_config_btn.grid(row=3, column=0, pady=13)  # Adjust row index as needed
 
     process_queue()
-    main_window.mainloop()
 
 def show_up_to_date_window():
     def close_window():
@@ -331,15 +322,16 @@ def update_preferences_display():
     preferences_display_label.config(state=tk.DISABLED)
 
 def load_user_preferences():
+    global user_preferences
+    preferences_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
     try:
-        with open('user_preferences.json', 'r') as file:
-            return json.load(file)
+        with open(preferences_file_path, 'r') as file:
+            user_preferences = json.load(file)
+        print("Preferences loaded successfully.")
     except FileNotFoundError:
-        print("User preferences file not found. Using default settings.")
-        return {}
+        print("Preferences file not found. Using default preferences.")
     except json.JSONDecodeError:
-        print("Error decoding user preferences. Using default settings.")
-        return {}
+        print("Error decoding preferences file. Using default preferences.")
 
 def config_gui():
     global file_name_entry, destination_folder_label, preferences_display_label
@@ -398,11 +390,15 @@ def config_gui():
     save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences),  fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
     save_button.pack(pady=(10, 0))
     
+    # Load and display preferences when the config window is created
+    load_user_preferences()
+    update_preferences_display()
+    
     config.mainloop()
 
 def move_files():
     global selected_folder, user_preferences
-    logging.info('Starting move_files function')
+    print('Starting move_files function')
 
     global user_preferences  # Assuming user_preferences is defined globally
 
@@ -411,60 +407,59 @@ def move_files():
         try:
             user_preferences_dict = json.loads(user_preferences)
         except json.JSONDecodeError:
-            logging.error("Error decoding JSON from user_preferences")
+            print("Error decoding JSON from user_preferences")
             return
     else:
         user_preferences_dict = user_preferences
 
-
-    for filename in os.listdir(recordings_path):
-        logging.info(f'Processing file: {filename}')
+    for filename in os.listdir(target_path):
+        print(f'Processing file: {filename}')
         new_filename = None
 
         # Iterate over the dictionary of user preferences
         for preference, folder in user_preferences_dict.items():
             if preference in filename:
-                logging.info(f'File {filename} matches core file name {preference} and will be processed')
+                print(f'File {filename} matches core file name {preference} and will be processed')
                 _, file_extension = os.path.splitext(filename)
                 new_filename = f"{preference} {datetime.now().strftime('%m-%d-%Y')}{file_extension}"
                 destination_folder = folder
                 break
 
         if new_filename and destination_folder:
-            source_file_path = os.path.join(recordings_path, filename)
+            source_file_path = os.path.join(target_path, filename)
             destination_folder_path = destination_folder[0] if isinstance(destination_folder, list) else destination_folder
             destination_file_path = os.path.join(destination_folder_path, new_filename)  # Corrected to use destination_folder_path
             if os.path.exists(destination_file_path):
-                logging.info(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
+                print(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
             else:
                 try:
                     time.sleep(1)  # Wait for 1 second
                     shutil.move(source_file_path, destination_file_path)
-                    logging.info(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
+                    print(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
                     # Assuming send_notification is defined elsewhere
                     send_notification(os.path.basename(source_file_path), new_filename, os.path.basename(destination_folder_path))
                 except PermissionError as e:
-                    logging.error(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
+                    print(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
                 except IOError as e:
-                    logging.error(f'IOError encountered for {source_file_path} ({filename}). Error: {e}')
+                    print(f'IOError encountered for {source_file_path} ({filename}). Error: {e}')
                 except Exception as e:
-                    logging.error(f'Unexpected error moving {source_file_path} ({filename}). Error: {e}')
-    logging.info('Completed move_files function')
+                    print(f'Unexpected error moving {source_file_path} ({filename}). Error: {e}')
+    print('Completed move_files function')
 
 def send_notification(original_file_name, new_file_name, destination_folder):
     try:
-        logging.info(f'Attempting to send notification for {new_file_name}')
+        print(f'Attempting to send notification for {new_file_name}')
         notification.notify(
             title='QT9 U Recording Transfer',
             message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
             timeout=5000
         )
     except Exception as e:
-        logging.error(f'An error occurred while trying to send a notification: {e}')
+        print(f'An error occurred while trying to send a notification: {e}')
 
 class MyHandler(FileSystemEventHandler):
     def on_created(self, event):
-        logging.info(f'The file {os.path.basename(event.src_path)} has been created!')
+        print(f'The file {os.path.basename(event.src_path)} has been created!')
         move_files()
 
 def run_move_to_startup():
@@ -496,42 +491,72 @@ def quit_application(icon, item):
     os._exit(0)
 
 def signal_handler(signum, frame):
-    global keep_running
-    logging.info('Signal received, stopping observer.')
-    keep_running = False
+    print(f'Signal {signum} received, stopping observer.')
+    keep_running.clear()
 
-def main():
-    check_for_updates(show_up_to_date=True)
-    periodic_check()
-
-    setup_system_tray()
-
-    root.after(100, show_main_gui)
-    root.mainloop()
-
-    global keep_running
-    keep_running = True
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
+def start_observer():
+    print('Initializing event handler and observer')
     event_handler = MyHandler()
     observer = Observer()
-    observer.schedule(event_handler, path=recordings_path, recursive=False)
-    logging.info('Starting the observer')
+    observer.schedule(event_handler, path=target_path, recursive=False)
+    print('Starting the observer')
     observer.start()
-    logging.info(f'Observer started and is monitoring: {recordings_path}')
-    
+    print(f'Observer started and is monitoring: {target_path}')
+
     try:
-        while keep_running:
+        while keep_running.is_set():
             time.sleep(1)
-    except KeyboardInterrupt:
-        logging.info('KeyboardInterrupt received, stopping observer.')
     except Exception as e:
-        logging.error(f'Unexpected error in main loop. Error: {e}')
+        print(f'Unexpected error in main loop. Error: {e}')
     finally:
+        print('Stopping the observer')
         observer.stop()
         observer.join()
-        logging.info('Observer has been successfully stopped')
+        print('Observer has been successfully stopped')
+
+def main():
+    load_user_preferences()
+    print('Loaded user preferences')
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    keep_running.set()
+    print('Set up signal handlers')
+
+    root.after(100, process_queue)
+    print('Started main GUI')
+    
+    # Start the observer in a separate thread
+    observer_thread = threading.Thread(target=start_observer)
+    observer_thread.start()
+    print('Started observer thread')
+
+    # Start periodic update checks
+    check_for_updates()
+    print('Started periodic update checks')
+
+    # Set up the system tray icon
+    tray_thread = threading.Thread(target=setup_system_tray)
+    tray_thread.start()
+    print('Set up the system tray icon')
+
+    # Show the update window first
+    print('Showing update window')
+    check_for_updates(show_up_to_date=True)
+
+    # Show the main menu GUI
+    create_main_gui()
+    print('Created main menu GUI')
+
+    root.mainloop()
+    print('Entered main loop')
+
+    # Signal the observer thread to stop
+    print('Signaling observer thread to stop')
+    keep_running.clear()
+    observer_thread.join()
+    print('Observer thread has been successfully stopped')
 
 if __name__ == "__main__":
+    print('Starting application')
     main()
