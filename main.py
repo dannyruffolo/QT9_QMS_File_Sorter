@@ -24,9 +24,12 @@ from plyer import notification
 
 CURRENT_VERSION = "3.0.0"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
+TARGET_PATH_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "target_path.json")
+PREFERENCES_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
 
-global user_preferences
-target_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
+global user_preferences, target_path
+default_target_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
+target_path = default_target_pathuser_preferences = {}
 user_preferences = {}
 selected_folder = ""  # To store the last selected folder
 gui_queue = queue.Queue()
@@ -53,6 +56,47 @@ logger.addHandler(log_handler)
 keep_running = threading.Event()
 tray_icon = None
 tray_icon_lock = threading.Lock()
+
+# Predefined preferences
+default_preferences = {
+    "QT9 QMS Audit Management": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Audit"],
+    "QT9 QMS Calibrations": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Calibrations"],
+    "QT9 QMS CAPA_NCP": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/CAPA"],
+    "QT9 QMS Change Control": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Change Control"],
+    "QT9 QMS Customer Module": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Customer Feedback - Surveys"],
+    "QT9 QMS Deviations": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Deviations"],
+    "QT9 QMS Doc Control": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Document Control"],
+    "QT9 QMS ECR_ECN": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/ECR-ECN"],
+    "QT9 QMS Inspections": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Inspections"],
+    "QT9 QMS Preventive Maintenance": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Preventative Maintenance"],
+    "QT9 QMS Supplier Surveys_Evaluations": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Supplier Surveys - Evaluations"],
+    "QT9 QMS Training Module": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Training Module"],
+    "QT9 QMS Product Design": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Product Design"],
+    "QT9 QMS Quality Events": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/Quality Events"],
+    "QT9 QMS Test Module": ["C:/Users/druffolo/Box/QT9 University/Training Recordings/TEST - DO NOT USE"],
+}
+
+def create_default_files():
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(TARGET_PATH_FILE), exist_ok=True)
+
+    # Create target path file with default value if it doesn't exist
+    if not os.path.exists(TARGET_PATH_FILE):
+        with open(TARGET_PATH_FILE, 'w') as file:
+            json.dump({'target_path': default_target_path}, file)
+
+    # Create preferences file with default value if it doesn't exist
+    if not os.path.exists(PREFERENCES_FILE):
+        with open(PREFERENCES_FILE, 'w') as file:
+            json.dump({}, file)
+
+def populate_preferences():
+    with open(PREFERENCES_FILE, 'w') as file:
+        json.dump(default_preferences, file, indent=4)
+    print("Preferences populated successfully.")
+
+    load_user_preferences()
+    update_preferences_display()
 
 def setup_system_tray():
     global tray_icon
@@ -265,6 +309,31 @@ def periodic_check():
     check_for_updates()
     threading.Timer(3600, periodic_check).start()  # Check for updates every hour
 
+def select_target_path():
+    global target_path
+    selected_path = filedialog.askdirectory()
+    if selected_path:
+        target_path = selected_path
+        save_target_path(target_path)
+        restart_observer(target_path)
+        target_path_label.config(text=target_path)  # Update the label with the new path
+        print(f"Target path updated to: {target_path}")
+    else:
+        print("No path selected.")
+
+def save_target_path(path):
+    with open(TARGET_PATH_FILE, 'w') as file:
+        json.dump({"target_path": path}, file)
+
+def load_target_path():
+    global target_path
+    if os.path.exists(TARGET_PATH_FILE):
+        with open(TARGET_PATH_FILE, 'r') as file:
+            data = json.load(file)
+            target_path = data.get("target_path", default_target_path)
+    else:
+        target_path = default_target_path
+
 def select_destination_folder():
     global selected_folder  # Declare as global to ensure it can be accessed
     selected_folder = filedialog.askdirectory()
@@ -297,44 +366,57 @@ def add_to_preferences():
         print("Please select a folder and enter a file name first.")
 
 def save_user_preferences(user_preferences):
-    modified_preferences = {}
-    for key, value in user_preferences.items():
-        if isinstance(value, list):
-            # Example conversion: list to comma-separated string
-            modified_preferences[key] = ','.join(map(str, value))
-        else:
-            modified_preferences[key] = value
+    # Update user_preferences with the current entries
+    updated_preferences = {}
+    for frame in preferences_display_frame.winfo_children():
+        file_name = frame.children['!entry'].get()
+        folder_path = frame.children['!label'].cget("text")
+        if file_name and folder_path:
+            updated_preferences[file_name] = [folder_path]
 
-    preferences_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
-    with open(preferences_file_path, 'w') as file:
-        json.dump(user_preferences, file)
+    # Replace the old preferences with the updated ones
+    user_preferences.clear()
+    user_preferences.update(updated_preferences)
+
+    with open(PREFERENCES_FILE, 'w') as file:
+        json.dump(user_preferences, file, indent=4)
     print("Preferences saved successfully.")
     update_preferences_display()
 
 def update_preferences_display():
-    global preferences_display_label
-    display_text = ""
+    global preferences_display_frame, user_preferences
+    for widget in preferences_display_frame.winfo_children():
+        widget.destroy()
+
     for file_name, folders in user_preferences.items():
-        display_text += f"{file_name}:\n" + "\n".join(folders) + "\n\n"
-    preferences_display_label.config(state=tk.NORMAL)
-    preferences_display_label.delete('1.0', tk.END)
-    preferences_display_label.insert(tk.END, display_text)
-    preferences_display_label.config(state=tk.DISABLED)
+        frame = tk.Frame(preferences_display_frame, bg='grey')
+        frame.pack(fill=tk.X, pady=2)
+
+        file_name_entry = tk.Entry(frame, width=35, font=('Segoe UI Variable', 13))
+        file_name_entry.insert(0, file_name)
+        file_name_entry.pack(side=tk.LEFT, padx=5)
+
+        folders_label = tk.Label(frame, text=", ".join(folders), bg='white', fg='black', font=('Segoe UI Variable', 13))
+        folders_label.pack(side=tk.LEFT, padx=5)
+
+        delete_button = tk.Button(frame, text="Delete", command=lambda fn=file_name: delete_preference(fn), fg='#ffffff', bg='#ff0000', font=('Segoe UI Variable', 13))
+        delete_button.pack(side=tk.LEFT, padx=5)
+
+def delete_preference(file_name):
+    if file_name in user_preferences:
+        del user_preferences[file_name]
+        update_preferences_display()
 
 def load_user_preferences():
     global user_preferences
-    preferences_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
-    try:
-        with open(preferences_file_path, 'r') as file:
+    if os.path.exists(PREFERENCES_FILE):
+        with open(PREFERENCES_FILE, 'r') as file:
             user_preferences = json.load(file)
-        print("Preferences loaded successfully.")
-    except FileNotFoundError:
-        print("Preferences file not found. Using default preferences.")
-    except json.JSONDecodeError:
-        print("Error decoding preferences file. Using default preferences.")
+    else:
+        user_preferences = default_preferences
 
 def config_gui():
-    global file_name_entry, destination_folder_label, preferences_display_label
+    global file_name_entry, destination_folder_label, preferences_display_frame, target_path_label
     config = tk.Toplevel(root)
     config.title("File Sorter Configuration")
 
@@ -348,8 +430,8 @@ def config_gui():
             raise Exception("Both logo files could not be found.") from e
 
     # Window size and position
-    window_width = 810
-    window_height = 500
+    window_width = 1100
+    window_height = 850
     screen_width = config.winfo_screenwidth()
     screen_height = config.winfo_screenheight()
     x_coordinate = int((screen_width / 2) - (window_width / 2))
@@ -359,6 +441,16 @@ def config_gui():
     config.configure(bg='grey')
     label = tk.Label(config, text="QT9 QMS File Sorter Configuration", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 18))
     label.pack(pady=(20, 10))
+
+    # Frame for target path selection
+    target_path_frame = tk.Frame(config, bg='grey')
+    target_path_frame.pack(pady=(0, 20))
+
+    tk.Label(target_path_frame, text="Target Path:", bg='grey', fg='#ffffff', font=('Segoe UI Variable', 13)).pack(side=tk.LEFT, padx=(0, 5))
+    target_path_label = tk.Label(target_path_frame, text=target_path, bg='white', fg='black', font=('Segoe UI Variable', 13))
+    target_path_label.pack(side=tk.LEFT, padx=(0, 5))
+    select_target_path_button = tk.Button(target_path_frame, text="Select Target Path", command=select_target_path, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
+    select_target_path_button.pack(side=tk.LEFT, padx=(5, 0))
 
     # Frame for buttons and inputs
     input_frame = tk.Frame(config, bg='grey')
@@ -378,15 +470,20 @@ def config_gui():
     destination_folder_label = tk.Label(button_frame, text="No folder selected", bg='white', fg='black', font=('Segoe UI Variable', 13))
     destination_folder_label.pack(side=tk.LEFT, padx=10)
     
-    # Initialize and pack the add_button above the preferences_display_label
+    # Initialize and pack the add_button above the preferences_display_frame
     add_button = tk.Button(config, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
-    add_button.pack(pady=(10, 10))  # Adjusted to pack before the preferences_display_label
+    add_button.pack(pady=(10, 10))  # Adjusted to pack before the preferences_display_frame
     
-    # Now, the preferences_display_label will follow here, ensuring the "Add to Preferences" button is centered above it
-    preferences_display_label = scrolledtext.ScrolledText(config, height=12, width=80, font=('Segoe UI Variable', 13))
-    preferences_display_label.pack()
-    preferences_display_label.config(state=tk.DISABLED)
+    # Now, the preferences_display_frame will follow here, ensuring the "Add to Preferences" button is centered above it
+    preferences_display_frame = tk.Frame(config, bg='grey')
+    preferences_display_frame.pack(fill=tk.BOTH, expand=True)
     
+    # Add the new button to populate preferences
+    populate_preferences_btn = tk.Button(button_frame, text="Populate Preferences", command=populate_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+    populate_preferences_btn.pack(side=tk.LEFT, padx=10, pady=13)
+
+    update_preferences_display()  # Update the preferences display with the current preferences
+
     save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences),  fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
     save_button.pack(pady=(10, 0))
     
@@ -452,7 +549,7 @@ def send_notification(original_file_name, new_file_name, destination_folder):
         notification.notify(
             title='QT9 U Recording Transfer',
             message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
-            timeout=5000
+            timeout=1  # Timeout in seconds
         )
     except Exception as e:
         print(f'An error occurred while trying to send a notification: {e}')
@@ -494,17 +591,26 @@ def signal_handler(signum, frame):
     print(f'Signal {signum} received, stopping observer.')
     keep_running.clear()
 
+observer = Observer()
+event_handler = MyHandler()
+
 def start_observer():
-    print('Initializing event handler and observer')
-    event_handler = MyHandler()
-    observer = Observer()
+    global observer
+    
+    # Check if the path exists
+    if not os.path.exists(target_path):
+        print(f"Error: The path {target_path} does not exist.")
+        return
+
     observer.schedule(event_handler, path=target_path, recursive=False)
-    print('Starting the observer')
     observer.start()
-    print(f'Observer started and is monitoring: {target_path}')
 
     try:
+        printed_message = False
         while keep_running.is_set():
+            if not printed_message:
+                print('Observer is running')
+                printed_message = True
             time.sleep(1)
     except Exception as e:
         print(f'Unexpected error in main loop. Error: {e}')
@@ -514,9 +620,19 @@ def start_observer():
         observer.join()
         print('Observer has been successfully stopped')
 
+def restart_observer(new_path):
+    global observer
+    observer.stop()
+    observer.join()
+    observer = Observer()
+    observer.schedule(event_handler, path=new_path, recursive=False)
+    observer.start()
+    print(f"Observer restarted with new path: {new_path}")
+
 def main():
+    create_default_files()
+    load_target_path()
     load_user_preferences()
-    print('Loaded user preferences')
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
