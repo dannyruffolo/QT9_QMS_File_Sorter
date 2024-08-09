@@ -24,8 +24,8 @@ from plyer import notification
 
 CURRENT_VERSION = "3.0.0"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
-TARGET_PATH_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "target_path.json")
-PREFERENCES_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter", "preferences_file.json")
+TARGET_PATH_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "target_path.json")
+PREFERENCES_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "preferences_file.json")
 
 global user_preferences, target_path
 default_target_path = os.path.expanduser(r"~\OneDrive - QT9 Software\Recordings")
@@ -37,7 +37,7 @@ root = tk.Tk()
 root.withdraw()
 
 log_format = '%(asctime)s - %(name)s - %(levelname)s - [Line #%(lineno)d] - %(message)s'
-log_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter")
+log_file_path = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter")
 if not os.path.exists(log_file_path):
     os.makedirs(log_file_path)
 log_file = os.path.join(log_file_path, 'app.log')
@@ -165,15 +165,14 @@ def show_main_gui():
     label.pack(pady=(20, 10))
     button_frame = tk.Frame(main_window, bg='grey')
     button_frame.place(relx=0.5, rely=0.55, anchor='center')
+    open_config_btn = tk.Button(button_frame, text="Configuration Menu", command=config_gui, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+    open_config_btn.grid(row=0, column=0, pady=13)  # Adjust row index as needed
     check_for_update_btn = tk.Button(button_frame, text="Check For Updates", command=lambda: check_for_updates(True), fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    check_for_update_btn.grid(row=0, column=0, pady=13)
+    check_for_update_btn.grid(row=2, column=0, pady=13)
+    open_qt9_folder_btn = tk.Button(button_frame, text="Application Files", command=open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
+    open_qt9_folder_btn.grid(row=1, column=0, pady=13)
     move_to_startup_btn = tk.Button(button_frame, text="Run App on Startup", command=run_move_to_startup, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    move_to_startup_btn.grid(row=1, column=0, pady=13)
-    open_qt9_folder_btn = tk.Button(button_frame, text="Open Application Logs", command=open_qt9_folder, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    open_qt9_folder_btn.grid(row=2, column=0, pady=13)
-
-    open_config_btn = tk.Button(button_frame, text="Open Config", command=config_gui, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    open_config_btn.grid(row=3, column=0, pady=13)  # Adjust row index as needed
+    move_to_startup_btn.grid(row=3, column=0, pady=13)
 
     process_queue()
 
@@ -394,13 +393,13 @@ def update_preferences_display():
 
         file_name_entry = tk.Entry(frame, width=35, font=('Segoe UI Variable', 13))
         file_name_entry.insert(0, file_name)
-        file_name_entry.pack(side=tk.LEFT, padx=5)
+        file_name_entry.pack(side=tk.LEFT, padx=15)
 
-        folders_label = tk.Label(frame, text=", ".join(folders), bg='white', fg='black', font=('Segoe UI Variable', 13))
-        folders_label.pack(side=tk.LEFT, padx=5)
+        folders_label = tk.Label(frame, text=", ".join(folders), bg='white', fg='black', font=('Segoe UI Variable', 13), width=80, anchor='w')
+        folders_label.pack(side=tk.LEFT, padx=5, fill=tk.X)
 
         delete_button = tk.Button(frame, text="Delete", command=lambda fn=file_name: delete_preference(fn), fg='#ffffff', bg='#ff0000', font=('Segoe UI Variable', 13))
-        delete_button.pack(side=tk.LEFT, padx=5)
+        delete_button.pack(side=tk.RIGHT, padx=5)
 
 def delete_preference(file_name):
     if file_name in user_preferences:
@@ -414,6 +413,14 @@ def load_user_preferences():
             user_preferences = json.load(file)
     else:
         user_preferences = default_preferences
+
+def clear_all_preferences():
+    global user_preferences
+    user_preferences = {}
+    with open('preferences.json', 'w') as file:
+        json.dump(user_preferences, file)
+    update_preferences_display()
+    messagebox.showinfo("Clear All", "All preferences have been cleared.")
 
 def config_gui():
     global file_name_entry, destination_folder_label, preferences_display_frame, target_path_label
@@ -430,8 +437,8 @@ def config_gui():
             raise Exception("Both logo files could not be found.") from e
 
     # Window size and position
-    window_width = 1100
-    window_height = 850
+    window_width = 1185
+    window_height = 775
     screen_width = config.winfo_screenwidth()
     screen_height = config.winfo_screenheight()
     x_coordinate = int((screen_width / 2) - (window_width / 2))
@@ -470,22 +477,55 @@ def config_gui():
     destination_folder_label = tk.Label(button_frame, text="No folder selected", bg='white', fg='black', font=('Segoe UI Variable', 13))
     destination_folder_label.pack(side=tk.LEFT, padx=10)
     
-    # Initialize and pack the add_button above the preferences_display_frame
-    add_button = tk.Button(config, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
-    add_button.pack(pady=(10, 10))  # Adjusted to pack before the preferences_display_frame
-    
-    # Now, the preferences_display_frame will follow here, ensuring the "Add to Preferences" button is centered above it
-    preferences_display_frame = tk.Frame(config, bg='grey')
-    preferences_display_frame.pack(fill=tk.BOTH, expand=True)
-    
-    # Add the new button to populate preferences
-    populate_preferences_btn = tk.Button(button_frame, text="Populate Preferences", command=populate_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 14), width=19)
-    populate_preferences_btn.pack(side=tk.LEFT, padx=10, pady=13)
+    # Frame to hold the add and populate buttons
+    add_populate_frame = tk.Frame(config, bg='grey')
+    add_populate_frame.pack(pady=(10, 10))
 
+    # Initialize and pack the add_button and populate_preferences_btn in the same frame
+    add_button = tk.Button(add_populate_frame, text="Add to Preferences", command=add_to_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
+    add_button.pack(side=tk.LEFT, padx=5)
+    
+    populate_preferences_btn = tk.Button(add_populate_frame, text="Add QMS Defaults", command=populate_preferences, fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
+    populate_preferences_btn.pack(side=tk.LEFT, padx=5)
+    
+    # Create a frame to hold the canvas and scrollbar
+    display_frame = tk.Frame(config, bg='grey')
+    display_frame.pack(fill=tk.BOTH, expand=True)
+    
+    # Create a canvas and a scrollbar for the preferences_display_frame
+    canvas = tk.Canvas(display_frame, bg='grey', bd=0, highlightthickness=0)
+    scrollbar = tk.Scrollbar(display_frame, orient="vertical", command=canvas.yview)
+    preferences_display_frame = tk.Frame(canvas, bg='grey')
+    
+    # Configure the canvas and scrollbar
+    preferences_display_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        )
+    )
+    canvas.create_window((0, 0), window=preferences_display_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # Pack the canvas and scrollbar
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    # Bind the mouse wheel event to the canvas
+    def on_mouse_wheel(event):
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    canvas.bind_all("<MouseWheel>", on_mouse_wheel)
+    
     update_preferences_display()  # Update the preferences display with the current preferences
-
-    save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences),  fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
-    save_button.pack(pady=(10, 0))
+    
+    # Pack the save button at the bottom of the window, centered
+    save_button = tk.Button(config, text="Save Preferences", command=lambda: save_user_preferences(user_preferences), fg='#ffffff', bg='#0056b8', font=('Segoe UI Variable', 13))
+    save_button.pack(side=tk.BOTTOM, pady=(10, 10))
+    
+    # Add the clear all button at the bottom of the window, centered
+    clear_all_button = tk.Button(config, text="Clear All", command=clear_all_preferences, fg='#ffffff', bg='#ff0000', font=('Segoe UI Variable', 13))
+    clear_all_button.pack(side=tk.BOTTOM, pady=(10, 10))
     
     # Load and display preferences when the config window is created
     load_user_preferences()
@@ -577,7 +617,7 @@ def run_move_to_startup():
 
 def open_qt9_folder():
     try:
-        os.startfile(os.path.join(os.path.expanduser("~"), "AppData", "Local", "QT9 QMS File Sorter"))
+        os.startfile(log_file_path)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
 
