@@ -12,17 +12,16 @@ import tempfile
 import requests
 import json
 import queue
-from queue import Queue, Empty
 from pystray import MenuItem as item
 from PIL import Image
-from tkinter import messagebox, filedialog, scrolledtext
+from tkinter import messagebox, filedialog
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
-CURRENT_VERSION = "3.0.2"
+CURRENT_VERSION = "3.0.3"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 TARGET_PATH_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "target_path.json")
 PREFERENCES_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "preferences_file.json")

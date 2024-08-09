@@ -12,7 +12,7 @@ pystray==0.19.5
 pywin32==306
 pywin32-ctypes==0.2.2
 requests==2.32.3
-setuptools==71.0.3
+setuptools==72.1.0
 six==1.16.0
 urllib3==2.2.2
 watchdog==4.0.1
