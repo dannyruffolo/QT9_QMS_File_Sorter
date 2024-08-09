@@ -22,7 +22,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
-CURRENT_VERSION = "3.0.3"
+CURRENT_VERSION = "3.0.2"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 TARGET_PATH_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "target_path.json")
 PREFERENCES_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "preferences_file.json")
@@ -298,7 +298,7 @@ def download_and_install_update(latest_version):
         messagebox.showinfo("Update", "Download completed. Starting the installer.", parent=update_window)
         os.startfile(installer_path)
         uninstall_old_version()
-        sys.exit()  # Exit the current process to allow the installer to run
+        os._exit(0)  # Exit the current process to allow the installer to run
     except Exception as e:
         messagebox.showerror("Update Error", f"Failed to download and install update: {e}", parent=update_window)
 
