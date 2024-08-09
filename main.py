@@ -93,7 +93,7 @@ def create_default_files():
 def populate_preferences():
     with open(PREFERENCES_FILE, 'w') as file:
         json.dump(default_preferences, file, indent=4)
-    print("Preferences populated successfully.")
+    logging.info("Preferences populated successfully.")
 
     load_user_preferences()
     update_preferences_display()
@@ -223,7 +223,7 @@ def check_for_updates(show_up_to_date=False):
         elif show_up_to_date:
             show_up_to_date_window()
     except requests.RequestException as e:
-        print(f"Error checking for updates: {e}")
+        logging.error(f"Error checking for updates: {e}")
 
 def system_tray_check_for_updates():
     check_for_updates(show_up_to_date=True)
@@ -246,7 +246,7 @@ def show_update_gui(latest_version):
         try:
             update_window.iconbitmap(r'C:\Users\druffolo\Desktop\File Sorter Installer & EXE Files\app_icon.ico')
         except tk.TclError as e:
-            print("Both logo files could not be found.")
+            logging.error("Both logo files could not be found.")
 
     # Window size and position
     window_width = 300
@@ -279,11 +279,11 @@ def uninstall_old_version():
         uninstaller_path = r'C:\Program Files\QT9 QMS File Sorter\unins000.exe'
         if os.path.exists(uninstaller_path):
             subprocess.run([uninstaller_path, '/SILENT'], check=True)  # Run with silent flag
-            print("Old version uninstalled successfully.")
+            logging.info("Old version uninstalled successfully.")
         else:
-            print("Uninstaller not found. Proceeding with the installation of the new version.")
+            logging.info("Uninstaller not found. Proceeding with the installation of the new version.")
     except subprocess.CalledProcessError as e:
-        print(f"Error during uninstallation: {e}")
+        logging.error(f"Error during uninstallation: {e}")
         sys.exit(1)  # Exit if uninstallation fails to prevent potential conflicts
 
 def download_and_install_update(latest_version):
@@ -316,9 +316,9 @@ def select_target_path():
         save_target_path(target_path)
         restart_observer(target_path)
         target_path_label.config(text=target_path)  # Update the label with the new path
-        print(f"Target path updated to: {target_path}")
+        logging.info(f"Target path updated to: {target_path}")
     else:
-        print("No path selected.")
+        logging.info("No path selected.")
 
 def save_target_path(path):
     with open(TARGET_PATH_FILE, 'w') as file:
@@ -362,7 +362,7 @@ def add_to_preferences():
         selected_folder = ""  # Reset the selected folder variable
         destination_folder_label.config(text="No folder selected")  # Reset the label
     else:
-        print("Please select a folder and enter a file name first.")
+        logging.info("Please select a folder and enter a file name first.")
 
 def save_user_preferences(user_preferences):
     # Update user_preferences with the current entries
@@ -379,7 +379,7 @@ def save_user_preferences(user_preferences):
 
     with open(PREFERENCES_FILE, 'w') as file:
         json.dump(user_preferences, file, indent=4)
-    print("Preferences saved successfully.")
+    logging.info("Preferences saved successfully.")
     update_preferences_display()
 
 def update_preferences_display():
@@ -416,8 +416,8 @@ def load_user_preferences():
 
 def clear_all_preferences():
     global user_preferences
-    user_preferences = {}
-    with open('preferences.json', 'w') as file:
+    user_preferences.clear()  # Clear the dictionary
+    with open(PREFERENCES_FILE, 'w') as file:
         json.dump(user_preferences, file)
     update_preferences_display()
     messagebox.showinfo("Clear All", "All preferences have been cleared.")
@@ -535,7 +535,7 @@ def config_gui():
 
 def move_files():
     global selected_folder, user_preferences
-    print('Starting move_files function')
+    logging.info('Starting move_files function')
 
     global user_preferences  # Assuming user_preferences is defined globally
 
@@ -544,19 +544,19 @@ def move_files():
         try:
             user_preferences_dict = json.loads(user_preferences)
         except json.JSONDecodeError:
-            print("Error decoding JSON from user_preferences")
+            logging.error("Error decoding JSON from user_preferences")
             return
     else:
         user_preferences_dict = user_preferences
 
     for filename in os.listdir(target_path):
-        print(f'Processing file: {filename}')
+        logging.info(f'Processing file: {filename}')
         new_filename = None
 
         # Iterate over the dictionary of user preferences
         for preference, folder in user_preferences_dict.items():
             if preference in filename:
-                print(f'File {filename} matches core file name {preference} and will be processed')
+                logging.info(f'File {filename} matches core file name {preference} and will be processed')
                 _, file_extension = os.path.splitext(filename)
                 new_filename = f"{preference} {datetime.now().strftime('%m-%d-%Y')}{file_extension}"
                 destination_folder = folder
@@ -567,36 +567,36 @@ def move_files():
             destination_folder_path = destination_folder[0] if isinstance(destination_folder, list) else destination_folder
             destination_file_path = os.path.join(destination_folder_path, new_filename)  # Corrected to use destination_folder_path
             if os.path.exists(destination_file_path):
-                print(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
+                logging.info(f'The file {os.path.basename(source_file_path)} already exists in the destination folder. Skipping this file.')
             else:
                 try:
                     time.sleep(1)  # Wait for 1 second
                     shutil.move(source_file_path, destination_file_path)
-                    print(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
+                    logging.info(f'The file {os.path.basename(source_file_path)} has been moved successfully.')
                     # Assuming send_notification is defined elsewhere
                     send_notification(os.path.basename(source_file_path), new_filename, os.path.basename(destination_folder_path))
                 except PermissionError as e:
-                    print(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
+                    logging.error(f'Permission denied for {source_file_path} ({filename}). Error: {e}')
                 except IOError as e:
-                    print(f'IOError encountered for {source_file_path} ({filename}). Error: {e}')
+                    logging.error(f'IOError encountered for {source_file_path} ({filename}). Error: {e}')
                 except Exception as e:
-                    print(f'Unexpected error moving {source_file_path} ({filename}). Error: {e}')
-    print('Completed move_files function')
+                    logging.error(f'Unexpected error moving {source_file_path} ({filename}). Error: {e}')
+    logging.info('Completed move_files function')
 
 def send_notification(original_file_name, new_file_name, destination_folder):
     try:
-        print(f'Attempting to send notification for {new_file_name}')
+        logging.info(f'Attempting to send notification for {new_file_name}')
         notification.notify(
             title='QT9 U Recording Transfer',
             message=f'The file "{original_file_name}" has been renamed to "{new_file_name}" and moved to \\Training Recordings\\{destination_folder}.',
             timeout=1  # Timeout in seconds
         )
     except Exception as e:
-        print(f'An error occurred while trying to send a notification: {e}')
+        logging.error(f'An error occurred while trying to send a notification: {e}')
 
 class MyHandler(FileSystemEventHandler):
     def on_created(self, event):
-        print(f'The file {os.path.basename(event.src_path)} has been created!')
+        logging.info(f'The file {os.path.basename(event.src_path)} has been created!')
         move_files()
 
 def run_move_to_startup():
@@ -628,7 +628,7 @@ def quit_application(icon, item):
     os._exit(0)
 
 def signal_handler(signum, frame):
-    print(f'Signal {signum} received, stopping observer.')
+    logging.info(f'Signal {signum} received, stopping observer.')
     keep_running.clear()
 
 observer = Observer()
@@ -639,7 +639,7 @@ def start_observer():
     
     # Check if the path exists
     if not os.path.exists(target_path):
-        print(f"Error: The path {target_path} does not exist.")
+        logging.error(f"Error: The path {target_path} does not exist.")
         return
 
     observer.schedule(event_handler, path=target_path, recursive=False)
@@ -649,16 +649,16 @@ def start_observer():
         printed_message = False
         while keep_running.is_set():
             if not printed_message:
-                print('Observer is running')
+                logging.info('Observer is running')
                 printed_message = True
             time.sleep(1)
     except Exception as e:
-        print(f'Unexpected error in main loop. Error: {e}')
+        logging.error(f'Unexpected error in main loop. Error: {e}')
     finally:
-        print('Stopping the observer')
+        logging.info('Stopping the observer')
         observer.stop()
         observer.join()
-        print('Observer has been successfully stopped')
+        logging.info('Observer has been successfully stopped')
 
 def restart_observer(new_path):
     global observer
@@ -667,7 +667,7 @@ def restart_observer(new_path):
     observer = Observer()
     observer.schedule(event_handler, path=new_path, recursive=False)
     observer.start()
-    print(f"Observer restarted with new path: {new_path}")
+    logging.info(f"Observer restarted with new path: {new_path}")
 
 def main():
     create_default_files()
@@ -677,42 +677,42 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     keep_running.set()
-    print('Set up signal handlers')
+    logging.info('Set up signal handlers')
 
     root.after(100, process_queue)
-    print('Started main GUI')
+    logging.info('Started main GUI')
     
     # Start the observer in a separate thread
     observer_thread = threading.Thread(target=start_observer)
     observer_thread.start()
-    print('Started observer thread')
+    logging.info('Started observer thread')
 
     # Start periodic update checks
     check_for_updates()
-    print('Started periodic update checks')
+    logging.info('Started periodic update checks')
 
     # Set up the system tray icon
     tray_thread = threading.Thread(target=setup_system_tray)
     tray_thread.start()
-    print('Set up the system tray icon')
+    logging.info('Set up the system tray icon')
 
     # Show the update window first
-    print('Showing update window')
+    logging.info('Showing update window')
     check_for_updates(show_up_to_date=True)
 
     # Show the main menu GUI
     create_main_gui()
-    print('Created main menu GUI')
+    logging.info('Created main menu GUI')
 
     root.mainloop()
-    print('Entered main loop')
+    logging.info('Entered main loop')
 
     # Signal the observer thread to stop
-    print('Signaling observer thread to stop')
+    logging.info('Signaling observer thread to stop')
     keep_running.clear()
     observer_thread.join()
-    print('Observer thread has been successfully stopped')
+    logging.info('Observer thread has been successfully stopped')
 
 if __name__ == "__main__":
-    print('Starting application')
+    logging.info('Starting application')
     main()
