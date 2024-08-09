@@ -22,7 +22,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from plyer import notification
 
-CURRENT_VERSION = "3.0.0"
+CURRENT_VERSION = "3.0.3"
 GITHUB_REPO = "dannyruffolo/QT9_QMS_File_Sorter"
 TARGET_PATH_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "target_path.json")
 PREFERENCES_FILE = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "QT9Software", "QT9 QMS File Sorter", "preferences_file.json")
@@ -229,6 +229,7 @@ def system_tray_check_for_updates():
     check_for_updates(show_up_to_date=True)
 
 def show_update_gui(latest_version):
+    global update_window
     def on_install():
         download_and_install_update(latest_version)
         update_window.destroy()
@@ -289,20 +290,17 @@ def uninstall_old_version():
 def download_and_install_update(latest_version):
     try:
         download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{latest_version}/FileSorter_{latest_version}_Installer.exe"
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()  # Ensure the download request was successful
+        response = requests.get(download_url)
         temp_dir = tempfile.mkdtemp()
         installer_path = os.path.join(temp_dir, "FileSorter_Installer.exe")
         with open(installer_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
-        messagebox.showinfo("Update", "Download completed. Starting the installer.")
+            file.write(response.content)
+        messagebox.showinfo("Update", "Download completed. Starting the installer.", parent=update_window)
         os.startfile(installer_path)
         uninstall_old_version()
-        shutil.rmtree(temp_dir)
         sys.exit()  # Exit the current process to allow the installer to run
     except Exception as e:
-        messagebox.showerror("Update Error", f"Failed to download and install update: {e}")
+        messagebox.showerror("Update Error", f"Failed to download and install update: {e}", parent=update_window)
 
 def periodic_check():
     check_for_updates()
@@ -687,14 +685,14 @@ def main():
     observer_thread.start()
     logging.info('Started observer thread')
 
-    # Start periodic update checks
-    check_for_updates()
-    logging.info('Started periodic update checks')
-
     # Set up the system tray icon
     tray_thread = threading.Thread(target=setup_system_tray)
     tray_thread.start()
     logging.info('Set up the system tray icon')
+
+    # Start periodic update checks
+    periodic_check()
+    logging.info('Started periodic update checks')
 
     # Show the update window first
     logging.info('Showing update window')
@@ -714,5 +712,4 @@ def main():
     logging.info('Observer thread has been successfully stopped')
 
 if __name__ == "__main__":
-    logging.info('Starting application')
     main()
