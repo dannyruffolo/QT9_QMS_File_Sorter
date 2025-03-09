@@ -1,12 +1,10 @@
-# QT9 QMS File Sorter
+# File Sorter Tool
 
-### Automatically Sort and Organize Your QT9 QMS Files
-
-[![Website](https://img.shields.io/badge/Website-QT9_QMS_File_Sorter-blue)](https://github.com/dannyruffolo/QT9_QMS_File_Sorter)
+### Automatically Sort and Organize Your Files
 
 ## 📌 About
 
-**QT9 QMS File Sorter** is a tool designed to help users automatically sort and organize their QT9 QMS files. By monitoring a specified directory, the application moves files to predefined folders based on user preferences.
+**The File Sorter Tool** is designed to help users automatically sort and organize their files. By monitoring a specified directory, the application moves files to predefined folders based on user preferences.
 
 ## ✨ Features
 
@@ -35,4 +33,4 @@ For any inquiries or contributions, reach out via GitHub Issues.
 4. After the installation is complete, click "Finish" and the setup wizard will appear.
 5. Click on "Run App on Startup".
 
-*The QT9 QMS File Sorter has now been installed and will run in the background, automatically starting each time the computer is turned on.*
+*The File Sorter Tool has now been installed and will run in the background, automatically starting each time the computer is turned on.*
